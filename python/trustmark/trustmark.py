@@ -10,6 +10,7 @@ from __future__ import absolute_import
 import torch
 import os
 import pathlib
+import re
 
 from omegaconf import OmegaConf
 from .utils.util import instantiate_from_config
@@ -17,6 +18,9 @@ from .utils.ecc import BCH
 from PIL import Image
 from torchvision import transforms
 import numpy as np
+import urllib.request
+
+MODEL_REMOTE_HOST = "https://cc-assets.netlify.app/watermarking/trustmark-models/"
 
 class TrustMark():
 
@@ -62,10 +66,18 @@ class TrustMark():
         self.decoder = self.load_model(locations['config'], locations['decoder'], self.device, secret_len, part='decoder')
         self.encoder = self.load_model(locations['config'], locations['encoder'], self.device, secret_len, part='encoder')
         self.removal = self.load_model(locations['config-rm'], locations['remover'], self.device, secret_len, part='remover')
-        
+
+    def check_and_download(self, filename):
+        if not os.path.isfile(filename):
+            print('Fetching model file (once only): '+filename)
+            urld=MODEL_REMOTE_HOST+os.path.basename(filename)
+            print('Fetching from '+urld)
+            urllib.request.urlretrieve(urld,filename)
 
     def load_model(self, config_path, weight_path, device, secret_len, part='all'):
         assert part in ['all', 'encoder', 'decoder', 'remover']
+        self.check_and_download(config_path)
+        self.check_and_download(weight_path)
         config = OmegaConf.load(config_path).model
         if part == 'encoder':
             # replace all other components with identity
