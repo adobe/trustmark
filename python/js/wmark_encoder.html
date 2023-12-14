@@ -1,0 +1,39 @@
+<!-- 
+ Copyright 2022 Adobe
+ All Rights Reserved.
+
+ NOTICE: Adobe permits you to use, modify, and distribute this file in
+ accordance with the terms of the Adobe license agreement accompanying
+ it. 
+-->
+<!DOCTYPE html>
+<html>
+  <header>
+    <title>Javascript Browser Watermark Decode demo</title>
+  </header>
+  <body>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js">
+    </script>
+
+    <h2>TrustMark Browser/Javascript encoder demo<h2>
+    <script async src="http://localhost:8080/ecc-wasm/bchlib-wasm.js"></script>
+
+<script>
+  
+ var Module = {
+   onRuntimeInitialized: function() {
+     bch_init = Module.cwrap('init',null,['number']);
+     bch_decode = Module.cwrap('inplacedecode',['string','number'],['string']);
+     bch_encode = Module.cwrap('inplaceencode',['string','number','number'],['string']);
+     
+     if (bch_init()) {
+       alert('Failed to initialize BCH lib');
+     }
+     
+   },
+  }; 
+    
+</script>
+  <script src="wmark_encode.js"></script>
+</body>
+</html>

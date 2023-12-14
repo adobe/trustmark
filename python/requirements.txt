@@ -1,0 +1,8 @@
+torch
+torchvision
+pytorch_lightning 
+omegaconf
+six
+einops
+kornia
+bchlib==0.14.0 

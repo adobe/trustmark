@@ -1,0 +1,78 @@
+model:
+  target: trustmark.denoise.WMRemover
+  params:
+    cover_key: "image"
+    secret_key: "secret"
+    use_ema: False
+    secret_embedder_config_path: trustmark/models/trustmark-rm.yaml
+    secret_embedder_ckpt_path: trustmark/models/trustmark_rm.ckpt
+    denoise_config:
+      target: trustmark.KBNet.kbnet_s_arch.KBNet_s
+      params:
+        lightweight: true
+        width: 32
+        ffn_scale: 1.5
+        middle_blk_num: 12
+        enc_blk_nums:
+          - 2
+          - 2
+          - 4
+          - 8
+        dec_blk_nums:
+          - 2
+          - 2
+          - 2
+          - 2        
+        
+    discriminator_config:
+      target: trustmark.munit.MsDCDisGP
+      params:
+        gp_weight: 10.0
+        num_scales: 1
+        norm: none
+
+    loss_config:
+      target: trustmark.loss.WMRemoverLoss
+      params:
+        recon_type: rgb
+        recon_weight: 1
+        perceptual_weight: 0.1
+        kl_weight: 0.0
+        secret_weight: 0.01
+        generator_weight: 0.1
+        discriminator_weight: 1.0
+        generator_update_freq: 1
+
+data:
+  target: trustmark.utils.imgcap_dataset.DataModuleFromConfig
+  params:
+    batch_size: 32
+    num_workers: 4
+    wrap: false
+    use_worker_init_fn: true
+lightning:
+  callbacks:
+    image_logger:
+      target: trustmark.logger.ImageLogger
+      params:
+        batch_frequency: 5000
+        max_images: 4
+        increase_log_steps: false
+        fixed_input: true
+    progress_bar:
+      target: lightning.pytorch.callbacks.TQDMProgressBar
+      params:
+        refresh_rate: 100
+    checkpoint:
+      target: lightning.pytorch.callbacks.ModelCheckpoint
+      params:
+        verbose: true
+        filename: '{epoch:06}-{step:09}'
+        every_n_train_steps: 10000
+
+  trainer:
+    benchmark: True
+    base_learning_rate: 3e-4
+    lr_mult: false
+    accumulate_grad_batches: 1
+    max_epochs: 100

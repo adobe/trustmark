@@ -1,0 +1,85 @@
+model:
+  target: trustmark.model.TrustMark_Arch
+  params:
+    cover_key: "image"
+    secret_key: "secret"
+    secret_len: 100
+    resolution: 256
+    use_ema: False
+    lr_scheduler: CosineAnnealingRestartCyclicLR
+
+    secret_encoder_config:
+      target: trustmark.unet.Unet1
+      params:
+        width: 32
+        ndown: 4
+        nmiddle: 1
+        activ: silu
+
+    secret_decoder_config:
+      target: trustmark.unet.SecretDecoder
+      params:
+        arch: resnet50
+
+    discriminator_config:
+      target: trustmark.munit.MsDCDisGP
+      params:
+        gp_weight: 10.0
+        num_scales: 1
+        norm: none
+
+    loss_config:
+      target: trustmark.loss.ImageSecretLoss
+      params:
+        recon_type: ffl+yuv
+        recon_weight: 1.5
+        perceptual_weight: 1.0
+        kl_weight: 0.0
+        secret_weight: 20.0
+        generator_weight: 0.5
+        discriminator_weight: 1.0
+        generator_update_freq: 2
+        max_image_weight_ratio: 27.5
+
+    noise_config:
+      target: trustmark.utils.transformations2.TransformNet
+      params:
+        ramp: 10000
+        severity: high
+        crop_mode: resized_crop
+        gamma: false  # this cause issue
+
+data:
+  target: trustmark.utils.imgcap_dataset.DataModuleFromConfig
+  params:
+    batch_size: 32
+    num_workers: 4
+    wrap: false
+    use_worker_init_fn: true
+
+lightning:
+  callbacks:
+    image_logger:
+      target: trustmark.logger.ImageLogger
+      params:
+        batch_frequency: 5000
+        max_images: 4
+        increase_log_steps: False
+        fixed_input: True  # log the same image batch
+    progress_bar:
+      target: lightning.pytorch.callbacks.TQDMProgressBar
+      params:
+        refresh_rate: 100
+    checkpoint:
+      target: lightning.pytorch.callbacks.ModelCheckpoint
+      params:
+        verbose: true
+        filename: '{epoch:06}-{step:09}'
+        every_n_train_steps: 10000
+
+  trainer:
+    benchmark: True
+    base_learning_rate: 4e-6
+    lr_mult: true
+    accumulate_grad_batches: 1
+    max_epochs: 150
