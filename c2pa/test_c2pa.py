@@ -9,7 +9,7 @@
 from trustmark import TrustMark
 from PIL import Image
 import random,string,json
-#import c2pa_python as c2pa
+import c2pa_python as c2pa
 
 tm=TrustMark(verbose=True, model_type='C')
 
