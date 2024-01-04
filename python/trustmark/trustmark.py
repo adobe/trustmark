@@ -54,9 +54,9 @@ class TrustMark():
 
 
         locations={'config' : os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark_{self.model_type}.yaml'), 
-                   'config-rm' : os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark-rm.yaml'), 
+                   'config-rm' : os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark_rm_{self.model_type}.yaml'), 
                    'decoder': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/decoder_{self.model_type}.ckpt'), 
-                   'remover': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark_rm.ckpt'),
+                   'remover': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark_rm_{self.model_type}.ckpt'),
                    'encoder': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/encoder_{self.model_type}.ckpt')}
 
         self.use_ECC=use_ECC
