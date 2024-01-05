@@ -12,7 +12,9 @@ https://arxiv.org/abs/2311.18297
 <sup>2</sup> Adobe Research, San Jose CA.
 
 
-This repo contains a Python (3.x) (`python/`)and a browser deployable Javascript (`js/`) implementation of TrustMark for encoding, decoding and removing image watermarks.  In addition, a C2PA (`c2pa/`) example is provided to demonstrate signing of a watermarked image using the CAI supplied python library for C2PA / Content Credentials.
+This repo contains a Python (3.8.5 or higher) (`python/`)and a browser deployable Javascript (`js/`) implementation of 
+TrustMark for  encoding, decoding and removing image watermarks.  In addition, a C2PA (`c2pa/`) example is provided to 
+demonstrate signing of a watermarked image using the CAI supplied python library for C2PA / Content Credentials.
 
 
 
@@ -65,6 +67,8 @@ A python example of embedding a watermark and signing the resulting image with a
 ### TrustMark Models
 
 The repo contains several model variants of TrustMark (`model/`) for flexibility and reproducability of the associated technical paper. The (B,Q) variants described in the technical paper, as well as the (C) variant use for the purposes of embedding provenance signals in images for the Content Authenticity Initiative (CAI).  Use the C variant to encode/decode identifiers for CAI images.
+
+Some of these are lazy loaded from CAI servers due to bandwidth limitations
 
 
 ## Citation
