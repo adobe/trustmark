@@ -231,10 +231,10 @@ class SecretDecoder(nn.Module):
         self.arch = arch
         if arch == 'resnet18':
 #            self.decoder = torchvision.models.resnet18(pretrained=True, progress=False)
-            self.decoder = torchvision.models.resnet18(weights='ResNet18_Weights.IMAGENET1K_V1', progress=False)
+            self.decoder = torchvision.models.resnet18()
             self.decoder.fc = nn.Linear(self.decoder.fc.in_features, secret_len)
         elif arch == 'resnet50':
-            self.decoder = torchvision.models.resnet50(weights='ResNet50_Weights.IMAGENET1K_V1', progress=False)
+            self.decoder = torchvision.models.resnet50()
 #            self.decoder = torchvision.models.resnet50(pretrained=True, progress=False)
             self.decoder.fc = nn.Linear(self.decoder.fc.in_features, secret_len)
         elif arch == 'resnext50':
