@@ -1,0 +1,10 @@
+numpy>=1.20.0
+pathlib>=1.0.1
+torch>=2.1.2
+torchvision>=0.16.2
+lightning>=2.0
+omegaconf>=2.1
+six>=1.9
+einops>=0.4.0
+kornia>=0.7.0
+tqdm>=4.57.0

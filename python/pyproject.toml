@@ -1,0 +1,53 @@
+[project]
+name = "trustmark"  
+version = "0.5.3"  
+description = "TrustMark: Universal Watermarking for Arbitrary Resolution Images"  
+readme = "README.md" 
+requires-python = ">=3.8.5"
+
+license = {file = "LICENSE.txt"}
+
+keywords = ["watermarking", "CAI", "watermark", "Content Authenticity Initiative", "provenance"]  # Optional
+
+authors = [
+  {name = "Tu Bui", email = "t.v.bui@surrey.ac.uk" }, 
+  {name = "Shruti Agarwal", email = "shragarw@adobe.com" },
+  {name = "John Collomosse", email = "collomos@adobe.com" } 
+]
+
+maintainers = [
+  {name = "John Collomosse", email = "collomos@adobe.com" } 
+]
+
+
+classifiers = [  
+  "Development Status :: 5 - Production/Stable",
+
+  # Indicate who your project is intended for
+  "Intended Audience :: Science/Research",
+
+  "License :: OSI Approved :: MIT License",
+
+  "Programming Language :: Python :: 3"
+]
+
+dependencies = [ 
+  "omegaconf>=2.1",
+  "pathlib>=1.0.1",
+  "numpy>=1.20.0",
+  "torch>=2.1.2",
+  "torchvision>=0.16.2",
+  "lightning>=2.0",
+  "six>=1.9",
+  "einops>=0.4.0",
+  "kornia>=0.7.0",
+  "tqdm>=4.57.0"
+]
+
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+Repository = "https://github.com/adobe/trustmark.git"
+
