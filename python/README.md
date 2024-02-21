@@ -12,16 +12,12 @@ https://arxiv.org/abs/2311.18297
 <sup>2</sup> Adobe Research, San Jose CA.
 
 
-This repo contains a Python (3.8.5 or higher) (`python/`)and a browser deployable Javascript (`js/`) implementation of 
-TrustMark for  encoding, decoding and removing image watermarks.  In addition, a C2PA (`c2pa/`) example is provided to 
-demonstrate signing of a watermarked image using the CAI supplied python library for C2PA / Content Credentials.
+This repo contains a Python (3.8.5 or higher) implementation of TrustMark for  encoding, decoding and removing image watermarks.  
 
 
-
-### Quick start for Python
+### Quick start 
 
 Within the python folder run `pip install .` \
-The TrustMark package is also available via PyPi - run `pip install trustmark` to install it indepedent of this repo.
 
 The `python/test.py` script provides examples of watermarking images (a JPEG and a transparent PNG image are provided as examples).  To test the installation the following code snippet in Python shows typical usage:
 
