@@ -119,7 +119,10 @@ class BCH(object):
                  roots.append(self.ECCstate.n-i)
                  if len(roots)==poly.deg:
                      break
-
+         if len(roots)<poly.deg:
+             # not enough roots to correct
+             self.ECCstate.errloc=[]
+             return -1
 
       if poly.deg==1:
          if (poly.c[0]):
