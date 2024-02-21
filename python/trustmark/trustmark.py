@@ -20,7 +20,6 @@ from PIL import Image
 from torchvision import transforms
 import numpy as np
 import urllib.request
-from tqdm import tqdm
 
 
 # for model checking
@@ -48,12 +47,6 @@ MODEL_CHECKSUMS['decoder_B.ckpt']="c4aaa4a86e551e6aac7f309331191971"
 MODEL_CHECKSUMS['encoder_B.ckpt']="e6ab35b3f2d02f37b418726a2dc0b9c9"
 MODEL_CHECKSUMS['trustmark_rm_B.yaml']="0952cd4de245c852840f22d096946db8"
 MODEL_CHECKSUMS['trustmark_rm_B.ckpt']="eb4279e0301973112b021b1440363401"
-
-class DownloadProgressBar(tqdm):
-      def update_to(self, b=1, bsize=1, tsize=None):
-        if tsize is not None:
-            self.total = tsize
-        self.update(b * bsize - self.n)
 
 class TrustMark():
 
@@ -119,8 +112,7 @@ class TrustMark():
             print('Fetching model file (once only): '+filename)
             urld=MODEL_REMOTE_HOST+os.path.basename(filename)
  
-            with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=urld.split('/')[-1]) as t:
-                urllib.request.urlretrieve(urld, filename=filename, reporthook=t.update_to)
+            urllib.request.urlretrieve(urld, filename=filename)
 
     def load_model(self, config_path, weight_path, device, secret_len, part='all'):
         assert part in ['all', 'encoder', 'decoder', 'remover']
