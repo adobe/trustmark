@@ -103,7 +103,7 @@ class TrustMark():
 
 
     def schemaCapacity(self):
-        return self.enctyp
+        return DataLayer(self.enctyp)
 
     def check_and_download(self, filename):
         valid=False
