@@ -95,11 +95,15 @@ class TrustMark():
         self.use_ECC=use_ECC
         self.secret_len=secret_len
         self.ecc = DataLayer(secret_len, verbose=verbose, encoding_mode=encoding_type)
+        self.enctyp=encoding_type
         
         self.decoder = self.load_model(locations['config'], locations['decoder'], self.device, secret_len, part='decoder')
         self.encoder = self.load_model(locations['config'], locations['encoder'], self.device, secret_len, part='encoder')
         self.removal = self.load_model(locations['config-rm'], locations['remover'], self.device, secret_len, part='remover')
 
+
+    def schemaCapacity(self):
+        return self.enctyp
 
     def check_and_download(self, filename):
         valid=False
