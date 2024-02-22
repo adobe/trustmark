@@ -36,6 +36,19 @@ class DataLayer(object):
             return 'BCH_2'
         return 'Unknown'
 
+    def schemaCapacity(self, version):
+        if version==0:
+            return 61
+        if version==1:
+            return 68
+        if version==2:
+            return 71
+        if version==3:
+            return 75
+        if version==4:
+            return 82
+        return 0
+
 
     def buildBCH(self, encoding_mode):
         if encoding_mode==1:
@@ -108,14 +121,24 @@ class DataLayer(object):
 
     def encode_text(self, text: List[str]):
         return np.array([self._encode_text(t) for t in text])
-    
+
+    def encode_binary(self, text: List[str]):
+        return np.array([self._encode_binary(t) for t in text])
+
+    def _encode_binary(self, strbin):
+        return self.process_encode(str(strbin))
+
     def _encode_text(self, text: str):
         data = self.encode_text_ascii(text)  # bytearray
         packet_d = ''.join(format(x, '08b') for x in data)
+        return self.process_encode(packet_d)
+
+    def process_encode(self,packet_d):
         data_bitcount=self.payload_len-self.bch_encoder.get_ecc_bits()-self.versionbits
         if (self.encoding_mode==0):
             data_bitcount=56
         ecc_bitcount=self.bch_encoder.get_ecc_bits()
+
         packet_d=packet_d[0:data_bitcount]
         packet_d = packet_d+'0'*(data_bitcount-len(packet_d))
 
@@ -144,11 +167,23 @@ class DataLayer(object):
         packet = np.array(packet, dtype=np.float32)
         return packet
     
+    def decode_bitstream(self, data: np.array, MODE='text'):
+        assert len(data.shape)==2
+        return [self._decode_text(d, MODE) for d in data]
+
+
+
     def decode_text(self, data: np.array):
         assert len(data.shape)==2
         return [self._decode_text(d) for d in data]
+
+
+    def decode_binary(self, data: np.array):
+        assert len(data.shape)==2
+        return [self._decode_text(d) for d in data]
+
     
-    def _decode_text(self, packet: np.array):
+    def _decode_text(self, packet: np.array, MODE):
         assert len(packet.shape)==1
         bitflips, packet_d, packet_e, bch_decoder, version = self.raw_payload_split(packet)
         if (bitflips==-1): # unsupported or corrupt wm
@@ -178,7 +213,12 @@ class DataLayer(object):
             data = data0
             return data, False, 0
         else:
-            dataasc = self.decode_text_ascii(data).strip()
+            if MODE=='text':
+                dataasc = self.decode_text_ascii(data).strip()
+            else:
+                dataasc = ''.join(format(x, '08b') for x in data)
+                maxbits=self.schemaCapacity(version)
+                dataasc=dataasc[0:maxbits]
             return dataasc, True, version
 
 

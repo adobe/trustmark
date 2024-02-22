@@ -18,7 +18,7 @@ EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
 
 # Available modes: C=compact, Q=quality, B=base
 MODE='Q'
-tm=TrustMark(verbose=True, model_type=MODE, encoding_type=TrustMark.Encoding.Default)
+tm=TrustMark(verbose=True, model_type=MODE, encoding_type=TrustMark.Encoding.BCH_5)
 
 # encoding example
 cover = Image.open(EXAMPLE_FILE)
@@ -26,7 +26,10 @@ rgb=cover.convert('RGB')
 has_alpha=cover.mode== 'RGBA'
 if (has_alpha):
   alpha=cover.split()[-1]
-encoded=tm.encode(rgb, 'mysecret')
+
+encoded=tm.encode(rgb, 'mysecret', MODE='text')
+#encoded=tm.encode(rgb, '11011011111001111001111001011100011111001011001011110100', MODE='binary')
+
 if (has_alpha):
   encoded.putalpha(alpha)
 outfile=Path(EXAMPLE_FILE).stem+'_'+MODE+'.png'
@@ -34,6 +37,7 @@ encoded.save(outfile, exif=cover.info.get('exif'), icc_profile=cover.info.get('i
 
 # decoding example
 stego = Image.open(outfile).convert('RGB')
+#wm_secret, wm_present, wm_schema = tm.decode(stego, MODE='binary')
 wm_secret, wm_present, wm_schema = tm.decode(stego)
 if wm_present:
   print(f'Extracted secret: {wm_secret} (schema {wm_schema})')

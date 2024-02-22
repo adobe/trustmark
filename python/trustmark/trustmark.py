@@ -150,7 +150,7 @@ class TrustMark():
         return model
 
 
-    def decode(self, stego_image):
+    def decode(self, stego_image, MODE='text'):
         # Inputs
         # stego_image: PIL image
         # Outputs: secret numpy array (1, secret_len)
@@ -160,19 +160,22 @@ class TrustMark():
         with torch.no_grad():
             secret_pred = (self.decoder.decoder(stego) > 0).cpu().numpy()  # (1, secret_len)
         if self.use_ECC:
-            secret_pred, detected, version = self.ecc.decode_text(secret_pred)[0]
+            secret_pred, detected, version = self.ecc.decode_bitstream(secret_pred, MODE)[0]
             return secret_pred, detected, version
         else:
             return secret_pred, True, version
     
-    def encode(self, cover_image, string_secret, WM_STRENGTH=0.9, WM_MERGE='bilinear'):
+    def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.9, WM_MERGE='bilinear'):
         # Inputs
         #   cover_image: PIL image
         #   secret_tensor: (1, secret_len)
         # Outputs: stego image (PIL image)
         
         # secrets
-        secret = self.ecc.encode_text([string_secret])
+        if MODE=="binary":
+           secret = self.ecc.encode_binary([string_secret])
+        else:
+           secret = self.ecc.encode_text([string_secret])
         secret = torch.from_numpy(secret).float().to(self.device)
         
         
