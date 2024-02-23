@@ -38,11 +38,11 @@ class DataLayer(object):
 
     def schemaCapacity(self, version):
         if version==0:
-            return 61
+            return 56
         if version==1:
-            return 68
+            return 61
         if version==2:
-            return 71
+            return 68
         if version==3:
             return 75
         if version==4:
@@ -188,7 +188,6 @@ class DataLayer(object):
         bitflips, packet_d, packet_e, bch_decoder, version = self.raw_payload_split(packet)
         if (bitflips==-1): # unsupported or corrupt wm
             return '', False, version
-#        print('Decoding version %d' % version)
         if (len(packet_d)%8 ==0):
            pad_d=0
         else:
@@ -204,7 +203,7 @@ class DataLayer(object):
         packet_e = bytes(int(packet_e[i: i + 8], 2) for i in range(0, len(packet_e), 8))
         data = bytearray(packet_d)
         ecc = bytearray(packet_e)
-        data0 = self.decode_text_ascii(deepcopy(data)).strip()
+        data0 = self.decode_text_ascii(deepcopy(data)).rstrip('\x00').strip()
         if len(ecc)==bch_decoder.get_ecc_bytes():
             bitflips = bch_decoder.decode(data, ecc) 
         else:
@@ -214,7 +213,7 @@ class DataLayer(object):
             return data, False, 0
         else:
             if MODE=='text':
-                dataasc = self.decode_text_ascii(data).strip()
+                dataasc = self.decode_text_ascii(data).rstrip('\x00').strip()
             else:
                 dataasc = ''.join(format(x, '08b') for x in data)
                 maxbits=self.schemaCapacity(version)
