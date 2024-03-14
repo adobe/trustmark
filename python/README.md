@@ -74,7 +74,7 @@ If you find this work useful we request you please cite the repo and/or TrustMar
   journal = {ArXiv e-prints},
   archivePrefix = "arXiv",
   eprint = {2311.18297},
-  year = 2013,
+  year = 2023,
   month = nov
 }
 ```
