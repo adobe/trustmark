@@ -12,7 +12,7 @@ https://arxiv.org/abs/2311.18297
 <sup>2</sup> Adobe Research, San Jose CA.
 
 
-This repo contains a Python (v3.8.5 or greater) implementation (`python/`) and a browser deployable Javascript (`js/`) implementation of TrustMark for encoding, decoding and removing image watermarks.  In addition, a C2PA (`c2pa/`) example is provided to demonstrate signing of a watermarked image using the CAI supplied python library for C2PA / Content Credentials.
+This repo contains a Python (v3.8.5 or greater) implementation (`python/`) of TrustMark for encoding, decoding and removing image watermarks.  
 
 
 
@@ -65,7 +65,7 @@ If you find this work useful we request you please cite the repo and/or TrustMar
   journal = {ArXiv e-prints},
   archivePrefix = "arXiv",
   eprint = {2311.18297},
-  year = 2013,
+  year = 2023,
   month = nov
 }
 ```
