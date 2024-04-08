@@ -51,6 +51,7 @@ MODEL_CHECKSUMS['trustmark_rm_B.ckpt']="eb4279e0301973112b021b1440363401"
 class TrustMark():
 
     class Encoding:
+       Undefined=-1
        Default=0
        BCH_2=4
        BCH_3=3
@@ -167,7 +168,7 @@ class TrustMark():
             secret_pred, detected, version = self.ecc.decode_bitstream(secret_pred, MODE)[0]
             return secret_pred, detected, version
         else:
-            return secret_pred, True, version
+            return secret_pred, True, -1
     
     def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.9, WM_MERGE='bilinear'):
         # Inputs
