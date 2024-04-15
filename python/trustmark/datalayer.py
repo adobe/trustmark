@@ -19,7 +19,7 @@ class DataLayer(object):
         self.versionbits=4
 
         self.bch_decoders=dict()
-        for i in range(0,5):
+        for i in range(0,7):
           self.bch_decoders[i]=self.buildBCH(i)
         self.payload_len = payload_len  # in bits
 
@@ -34,6 +34,8 @@ class DataLayer(object):
             return 'BCH_3'
         if version==4:
             return 'BCH_2'
+        if version==5:
+            return 'BCH_SUPER'
         return 'Unknown'
 
     def schemaCapacity(self, version):
@@ -47,6 +49,8 @@ class DataLayer(object):
             return 75
         if version==4:
             return 82
+        if version==5:
+            return 40
         return 0
 
 
@@ -59,6 +63,8 @@ class DataLayer(object):
              return (BCH(3,BCH_POLYNOMIAL))
         elif encoding_mode==4:
              return (BCH(2,BCH_POLYNOMIAL))
+        elif encoding_mode==5:
+             return (BCH(8,BCH_POLYNOMIAL))
         else:  # assume default/mode 0
              return(BCH(5,BCH_POLYNOMIAL))
 
@@ -106,6 +112,12 @@ class DataLayer(object):
                 ecc=packet[82:96]
                 bitflips=2
                 decoder=self.bch_decoders[4]
+        elif wm_version==5:
+                # 8 bitflips via 56 ecc bits, 40 bit payload
+                data=packet[0:40]
+                ecc=packet[40:96]
+                bitflips=8
+                decoder=self.bch_decoders[5]
         else:
                 data=''
                 ecc=''
@@ -138,9 +150,12 @@ class DataLayer(object):
         if (self.encoding_mode==0):
             data_bitcount=56
         ecc_bitcount=self.bch_encoder.get_ecc_bits()
+        print('totalbits=%d  eccbits=%d  versionbits=%d  databits=%d' % (self.payload_len,self.bch_encoder.get_ecc_bits(),self.versionbits,data_bitcount))
 
         packet_d=packet_d[0:data_bitcount]
         packet_d = packet_d+'0'*(data_bitcount-len(packet_d))
+#        print('Padded data len =%d' % len(packet_d))
+#        print(packet_d)
 
         if (len(packet_d)%8)==0:
            pad_d=0
@@ -153,6 +168,8 @@ class DataLayer(object):
 
         packet_e = ''.join(format(x, '08b') for x in ecc)
         packet_e = packet_e[0:ecc_bitcount]
+#        print('ECC Data len=%d' % len(packet_e)) 
+#        print(packet_e)
         if (len(packet_e)%8)==0 or not (self.encoding_mode==0):
            pad_e=0
         else:
@@ -198,6 +215,10 @@ class DataLayer(object):
            pad_e=8-len(packet_e)% 8
         packet_d = packet_d + ('0'*pad_d)
         packet_e = packet_e + ('0'*pad_e)
+#        print('Decode byte padded data len=%d' % len(packet_d))
+#        print(packet_d)
+#        print('Decode byte padded ecc len=%d' % len(packet_e))
+#        print(packet_e)
 
         packet_d = bytes(int(packet_d[i: i + 8], 2) for i in range(0, len(packet_d), 8))
         packet_e = bytes(int(packet_e[i: i + 8], 2) for i in range(0, len(packet_e), 8))
@@ -208,9 +229,17 @@ class DataLayer(object):
             bitflips = bch_decoder.decode(data, ecc) 
         else:
             bitflips = -1 
+#        print('Bitflips = %d' % bitflips)
         if bitflips == -1:
-            data = data0
-            return data, False, 0
+            if MODE=='text':
+               data = data0
+               return data, False, version
+            else:
+               dataasc = ''.join(format(x, '08b') for x in data)
+               maxbits=self.schemaCapacity(version)
+               dataasc=dataasc[0:maxbits]
+               return dataasc, False, version
+
         else:
             if MODE=='text':
                 dataasc = self.decode_text_ascii(data).rstrip('\x00').strip()
@@ -266,17 +295,19 @@ def random_string(string_length=7):
 def main():
 
     # test rig for error correction
-    N=100
+    N=100 # nreps
+
     for i in range(0,N):
-       string_secret=random_string(random.randint(4, 8))
        mode=random.randint(0, 4) 
        D=DataLayer(100,False,mode)
-       wmpayload = D.encode_text([string_secret])   
+       nbit=D.schemaCapacity(mode)
+       string_secret=''.join([random.choice(['0', '1']) for _ in range(nbit)])
+       wmpayload = D.encode_binary([string_secret])   
        bitflips= random.randint(0,D.bch_encoder.ECCstate.t)   
        CORRUPTBITS=[random.randint(0, len(wmpayload[0])-5) for _ in range(bitflips)]
        for b in CORRUPTBITS:
           wmpayload[0][b] = 1- wmpayload[0][b]
-       secret_pred, detected, version = D.decode_bitstream(wmpayload,MODE='text')[0]
+       secret_pred, detected, version = D.decode_bitstream(wmpayload,MODE='binary')[0]
        print("Recovered - orig[%s] recover[%s] (det=%s schema %d bitflips=%d)" % (string_secret,secret_pred,detected,version,bitflips))
        for c in range(0,len(string_secret)): 
          if string_secret[c]!=secret_pred[c]:
@@ -289,4 +320,5 @@ if __name__ == "__main__":
 else:
     from .bchecc import BCH
  
+
 
