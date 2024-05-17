@@ -1,0 +1,47 @@
+{
+    "claim_generator": "python_trustmark/c2pa",
+    "title": "Watermarked Image",
+    "thumbnail": {
+        "format": "image/jpg",
+        "identifier": "example.jpg"
+    },
+    "ingredient_paths": [
+        "example.jpg"
+    ],
+    "assertions": [
+        {
+            "label": "c2pa.soft-binding",
+            "data": {
+                "alg": "com.adobe.trustmark.Q",
+                "blocks": [
+                    {
+                        "scope": {},
+                        "value": "2*00000010010100000100001111011011010011100010011101000010100000001110"
+                    }
+                ]
+            }
+        },
+        {
+            "label": "stds.schema-org.CreativeWork",
+            "data": {
+                "@context": "https://schema.org",
+                "@type": "CreativeWork",
+                "author": [
+                    {
+                        "@type": "Person",
+                        "name": "Walter Mark"
+                    }
+                ]
+            }
+        }
+    ],
+    "actions": [
+        {
+            "action": "c2pa.watermarked"
+        }
+    ],
+    "alg": "es256",
+    "ta_url": "http://timestamp.digicert.com",
+    "private_key": "keys/es256_private.key",
+    "sign_cert": "keys/es256_certs.pem"
+}
