@@ -37,8 +37,8 @@ MODEL_CHECKSUMS['trustmark_rm_C.yaml']="8476bcd4092abf302272868f3b4c2e38"
 MODEL_CHECKSUMS['trustmark_rm_C.ckpt']="5ca3d651d9cde175433cebdf437e412f"
 
 MODEL_CHECKSUMS['trustmark_Q.yaml']="fe40df84a7feeebfceb7a7678d7e6ec6"
-MODEL_CHECKSUMS['decoder_Q.ckpt']="be515bad63bd7fe6d8a79e8235800939"
-MODEL_CHECKSUMS['encoder_Q.ckpt']="6a6b8596475720299172f3531a0c2744"
+MODEL_CHECKSUMS['decoder_Q.ckpt']="4ced90e9cfe13e3295ad082887fe9187"
+MODEL_CHECKSUMS['encoder_Q.ckpt']="700328b8754db934b2f6cb5e5185d81f"
 MODEL_CHECKSUMS['trustmark_rm_Q.yaml']="8476bcd4092abf302272868f3b4c2e38"
 MODEL_CHECKSUMS['trustmark_rm_Q.ckpt']="760337a5596e665aed2ab5c49aa5284f"
 
@@ -110,11 +110,11 @@ class TrustMark():
         valid=False
         if os.path.isfile(filename) and os.path.getsize(filename)>0:
             with open(filename) as file, mmap(file.fileno(), 0, access=ACCESS_READ) as file:
-#                 print(filename+'-> '+md5(file).hexdigest())
+                 print(filename+'-> '+md5(file).hexdigest())
                  valid= (MODEL_CHECKSUMS[pathlib.Path(filename).name]==md5(file).hexdigest())
 
         if not valid:
-            print('Fetching model file (once only): '+filename)
+#            print('Fetching model file (once only): '+filename)
             urld=MODEL_REMOTE_HOST+os.path.basename(filename)
  
             urllib.request.urlretrieve(urld, filename=filename)
