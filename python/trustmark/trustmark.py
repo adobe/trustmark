@@ -104,7 +104,10 @@ class TrustMark():
 
 
     def schemaCapacity(self):
-        return self.ecc.schemaCapacity(self.enctyp)
+        if self.use_ECC:
+            return self.ecc.schemaCapacity(self.enctyp)
+        else:
+            return self.secret_len
 
     def check_and_download(self, filename):
         valid=False
@@ -168,6 +171,8 @@ class TrustMark():
             secret_pred, detected, version = self.ecc.decode_bitstream(secret_pred, MODE)[0]
             return secret_pred, detected, version
         else:
+            assert len(secret_pred.shape)==2
+            secret_pred = ''.join(str(int(x)) for x in secret_pred[0])
             return secret_pred, True, -1
     
     def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.9, WM_MERGE='bilinear'):
@@ -177,10 +182,20 @@ class TrustMark():
         # Outputs: stego image (PIL image)
         
         # secrets
-        if MODE=="binary":
-           secret = self.ecc.encode_binary([string_secret])
+        if not self.use_ECC:
+            if MODE=="binary":
+                secret = [int(x) for x in string_secret]
+                secret = np.array(secret, dtype=np.float32)
+            else:
+                secret = self.ecc.encode_text_ascii(string_secret)  # bytearray
+                secret = ''.join(format(x, '08b') for x in secret)
+                secret = [int(x) for x in secret]
+                secret = np.array(secret, dtype=np.float32)
         else:
-           secret = self.ecc.encode_text([string_secret])
+            if MODE=="binary":
+                secret = self.ecc.encode_binary([string_secret])
+            else:
+                secret = self.ecc.encode_text([string_secret])
         secret = torch.from_numpy(secret).float().to(self.device)
         
         
