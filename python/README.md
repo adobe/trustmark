@@ -73,10 +73,10 @@ To promote interoperability we recommend following the data schema implemented i
 
 #### Supported modes
 
-Encoding.BCH_5 - Protected payload of 61 bits (+ 35 ECC bits) - allows for 5 bit flips.
-Encoding.BCH_4 - Protected payload of 68 bits (+ 28 ECC bits) - allows for 4 bit flips.
-Encoding.BCH_3 - Protected payload of 75 bits (+ 21 ECC bits) - allows for 3 bit flips.
-Encoding.BCH_SUPER - Protected payload of 40 bits (+ 56 ECC bits) - allows for 8 bit flips.
+* `Encoding.BCH_5` - Protected payload of 61 bits (+ 35 ECC bits) - allows for 5 bit flips.
+* `Encoding.BCH_4` - Protected payload of 68 bits (+ 28 ECC bits) - allows for 4 bit flips.
+* `Encoding.BCH_3` - Protected payload of 75 bits (+ 21 ECC bits) - allows for 3 bit flips.
+* `Encoding.BCH_SUPER` - Protected payload of 40 bits (+ 56 ECC bits) - allows for 8 bit flips.
 
 For example instantiate the encoder as:
 ```
@@ -87,7 +87,7 @@ The decoder will automatically detect the data schema in a given TrustMark, allo
 
 #### Payload encoding
 
-The raw 100 bits break down into D+E+V=100 bits, where D is the protect payload (e.g. 61) and E are the error correction parity bits (e.g. 35) and V are the version bits (always 4). The version bits comprise 2 reserved (unused) bits, and 2 bits encoding an integer in range 0-3 which indicate the trustmark data schema in use.
+The raw 100 bits break down into D+E+V=100 bits, where D is the protect payload (e.g. 61) and E are the error correction parity bits (e.g. 35) and V are the version bits (always 4). The version bits comprise 2 reserved (unused) bits, and 2 bits encoding an integer in range 0-3 which indicate the trustmark data schema in use (see `python/datalayer.py` for the numeric codes).
 
 ### Usage with C2PA
 
