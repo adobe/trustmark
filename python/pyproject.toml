@@ -1,6 +1,6 @@
 [project]
 name = "trustmark"  
-version = "0.6.0"  
+version = "0.6.2"  
 description = "TrustMark: Universal Watermarking for Arbitrary Resolution Images"  
 readme = "README.md" 
 requires-python = ">=3.8.5"
@@ -34,7 +34,7 @@ classifiers = [
 dependencies = [ 
   "omegaconf>=2.1",
   "pathlib>=1.0.1",
-  "numpy>=1.20.0",
+  "numpy>=1.20.0,<2.0.0",
   "torch>=2.1.2",
   "torchvision>=0.16.2",
   "lightning>=2.0",
