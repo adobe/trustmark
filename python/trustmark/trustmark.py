@@ -52,13 +52,12 @@ class TrustMark():
 
     class Encoding:
        Undefined=-1
-       Default=0
-       BCH_2=4
+       BCH_SUPER=0
        BCH_3=3
        BCH_4=2
        BCH_5=1
 
-    def __init__(self, use_ECC=True, verbose=True, secret_len=100, device='', model_type='Q', encoding_type=Encoding.Default):
+    def __init__(self, use_ECC=True, verbose=True, secret_len=100, device='', model_type='Q', encoding_type=Encoding.BCH_5):
         """ Initializes the TrustMark watermark encoder/decoder/remover module
 
         Parameters (default listed first)
@@ -113,11 +112,11 @@ class TrustMark():
         valid=False
         if os.path.isfile(filename) and os.path.getsize(filename)>0:
             with open(filename) as file, mmap(file.fileno(), 0, access=ACCESS_READ) as file:
-                 print(filename+'-> '+md5(file).hexdigest())
+#                 print(filename+'-> '+md5(file).hexdigest())
                  valid= (MODEL_CHECKSUMS[pathlib.Path(filename).name]==md5(file).hexdigest())
 
         if not valid:
-#            print('Fetching model file (once only): '+filename)
+            print('Fetching model file (once only): '+filename)
             urld=MODEL_REMOTE_HOST+os.path.basename(filename)
  
             urllib.request.urlretrieve(urld, filename=filename)

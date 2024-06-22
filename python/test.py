@@ -13,8 +13,8 @@ import math
 import numpy as np
 
 
-#EXAMPLE_FILE = 'ufo_240.jpg'     # JPEG example
-EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
+EXAMPLE_FILE = 'ufo_240.jpg'     # JPEG example
+#EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
 
 # Available modes: C=compact, Q=quality, B=base
 MODE='Q'

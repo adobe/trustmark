@@ -25,32 +25,24 @@ class DataLayer(object):
 
     def schemaInfo(self, version):
         if version==0:
-            return 'Default'
+            return 'BCH_SUPER'
         if version==1:
             return 'BCH_5'
         if version==2:
             return 'BCH_4'
         if version==3:
             return 'BCH_3'
-        if version==4:
-            return 'BCH_2'
-        if version==5:
-            return 'BCH_SUPER'
         return 'Unknown'
 
     def schemaCapacity(self, version):
         if version==0:
-            return 56
+            return 40
         if version==1:
             return 61
         if version==2:
             return 68
         if version==3:
             return 75
-        if version==4:
-            return 82
-        if version==5:
-            return 40
         return 0
 
 
@@ -61,34 +53,18 @@ class DataLayer(object):
              return (BCH(4,BCH_POLYNOMIAL))
         elif encoding_mode==3:
              return (BCH(3,BCH_POLYNOMIAL))
-        elif encoding_mode==4:
-             return (BCH(2,BCH_POLYNOMIAL))
-        elif encoding_mode==5:
-             return (BCH(8,BCH_POLYNOMIAL))
-        else:  # assume default/mode 0
-             return(BCH(5,BCH_POLYNOMIAL))
-
-
+        else:  # assume superwatermark/mode 0
+             return(BCH(8,BCH_POLYNOMIAL))
 
 
     def raw_payload_split(self, packet):
 
         packet = ''.join([str(int(bit)) for bit in packet])  # bit string
 
-        wm_version = int(packet[-(self.versionbits):],2) # from last 4 bits
+        wm_version = int(packet[-(self.versionbits-2):],2) # from last 2 bits of the 4 version bits
 #        print('Found watermark with encoding schema %s' % self.schemaInfo(wm_version))
 
-        if wm_version==0:
-                # Default operation, 56 bit payload 5 bitflips/35 ecc bits
-                packet = packet[:(len(packet)//8*8)] # trim to multiple of 8 bits
-                packet = bytes(int(packet[i: i + 8], 2) for i in range(0, len(packet), 8))
-                ecc_bytes=5
-                data, ecc = packet[:-ecc_bytes], packet[-ecc_bytes:]
-                data = ''.join(format(x, '08b') for x in data)
-                ecc = ''.join(format(x, '08b') for x in ecc)
-                bitflips=5
-                decoder=self.bch_decoders[0]
-        elif wm_version==1:
+        if wm_version==1:
                 # 5 bitflips via 35 ecc bits, 61 bit payload
                 data=packet[0:61]
                 ecc=packet[61:96]
@@ -106,13 +82,7 @@ class DataLayer(object):
                 ecc=packet[75:96]
                 bitflips=3
                 decoder=self.bch_decoders[3]
-        elif wm_version==4:
-                # 2 bitflips via 14 ecc bits, 82 bit payload
-                data=packet[0:82]
-                ecc=packet[82:96]
-                bitflips=2
-                decoder=self.bch_decoders[4]
-        elif wm_version==5:
+        elif wm_version==0:
                 # 8 bitflips via 56 ecc bits, 40 bit payload
                 data=packet[0:40]
                 ecc=packet[40:96]
@@ -147,8 +117,6 @@ class DataLayer(object):
 
     def process_encode(self,packet_d):
         data_bitcount=self.payload_len-self.bch_encoder.get_ecc_bits()-self.versionbits
-        if (self.encoding_mode==0):
-            data_bitcount=56
         ecc_bitcount=self.bch_encoder.get_ecc_bits()
         print('totalbits=%d  eccbits=%d  versionbits=%d  databits=%d' % (self.payload_len,self.bch_encoder.get_ecc_bits(),self.versionbits,data_bitcount))
 
@@ -298,7 +266,7 @@ def main():
     N=100 # nreps
 
     for i in range(0,N):
-       mode=random.randint(0, 4) 
+       mode=random.randint(0, 3) 
        D=DataLayer(100,False,mode)
        nbit=D.schemaCapacity(mode)
        string_secret=''.join([random.choice(['0', '1']) for _ in range(nbit)])
