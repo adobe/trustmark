@@ -9,12 +9,12 @@
 from trustmark import TrustMark
 from PIL import Image
 from pathlib import Path
-import math
+import math,random
 import numpy as np
 
 
-EXAMPLE_FILE = 'ufo_240.jpg'     # JPEG example
-#EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
+#EXAMPLE_FILE = 'ufo_240.jpg'     # JPEG example
+EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
 
 # Available modes: C=compact, Q=quality, B=base
 MODE='Q'
@@ -27,8 +27,10 @@ has_alpha=cover.mode== 'RGBA'
 if (has_alpha):
   alpha=cover.split()[-1]
 
-encoded=tm.encode(rgb, 'mysecret', MODE='text')
-#encoded=tm.encode(rgb, '11011011111001111001111001011100011111001011001011110100', MODE='binary')
+random.seed(1234)
+capacity=tm.schemaCapacity()
+bitstring=''.join([random.choice(['0', '1']) for _ in range(capacity)])
+encoded=tm.encode(rgb, bitstring, MODE='binary')
 
 if (has_alpha):
   encoded.putalpha(alpha)
@@ -37,8 +39,7 @@ encoded.save(outfile, exif=cover.info.get('exif'), icc_profile=cover.info.get('i
 
 # decoding example
 stego = Image.open(outfile).convert('RGB')
-#wm_secret, wm_present, wm_schema = tm.decode(stego, MODE='binary')
-wm_secret, wm_present, wm_schema = tm.decode(stego)
+wm_secret, wm_present, wm_schema = tm.decode(stego, MODE='binary')
 if wm_present:
   print(f'Extracted secret: {wm_secret} (schema {wm_schema})')
 else:

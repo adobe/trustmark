@@ -118,12 +118,9 @@ class DataLayer(object):
     def process_encode(self,packet_d):
         data_bitcount=self.payload_len-self.bch_encoder.get_ecc_bits()-self.versionbits
         ecc_bitcount=self.bch_encoder.get_ecc_bits()
-        print('totalbits=%d  eccbits=%d  versionbits=%d  databits=%d' % (self.payload_len,self.bch_encoder.get_ecc_bits(),self.versionbits,data_bitcount))
 
         packet_d=packet_d[0:data_bitcount]
         packet_d = packet_d+'0'*(data_bitcount-len(packet_d))
-#        print('Padded data len =%d' % len(packet_d))
-#        print(packet_d)
 
         if (len(packet_d)%8)==0:
            pad_d=0
@@ -136,8 +133,6 @@ class DataLayer(object):
 
         packet_e = ''.join(format(x, '08b') for x in ecc)
         packet_e = packet_e[0:ecc_bitcount]
-#        print('ECC Data len=%d' % len(packet_e)) 
-#        print(packet_e)
         if (len(packet_e)%8)==0 or not (self.encoding_mode==0):
            pad_e=0
         else:
@@ -183,10 +178,6 @@ class DataLayer(object):
            pad_e=8-len(packet_e)% 8
         packet_d = packet_d + ('0'*pad_d)
         packet_e = packet_e + ('0'*pad_e)
-#        print('Decode byte padded data len=%d' % len(packet_d))
-#        print(packet_d)
-#        print('Decode byte padded ecc len=%d' % len(packet_e))
-#        print(packet_e)
 
         packet_d = bytes(int(packet_d[i: i + 8], 2) for i in range(0, len(packet_d), 8))
         packet_e = bytes(int(packet_e[i: i + 8], 2) for i in range(0, len(packet_e), 8))

@@ -112,7 +112,7 @@ class TrustMark():
         valid=False
         if os.path.isfile(filename) and os.path.getsize(filename)>0:
             with open(filename) as file, mmap(file.fileno(), 0, access=ACCESS_READ) as file:
-#                 print(filename+'-> '+md5(file).hexdigest())
+#                print(filename+'-> '+md5(file).hexdigest())
                  valid= (MODEL_CHECKSUMS[pathlib.Path(filename).name]==md5(file).hexdigest())
 
         if not valid:
@@ -165,16 +165,38 @@ class TrustMark():
             stego_image = stego_image.resize((256,256), Image.BILINEAR)
         stego = transforms.ToTensor()(stego_image).unsqueeze(0).to(self.decoder.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
         with torch.no_grad():
-            secret_pred = (self.decoder.decoder(stego) > 0).cpu().numpy()  # (1, secret_len)
+            secret_binaryarray = (self.decoder.decoder(stego) > 0).cpu().numpy()  # (1, secret_len)
         if self.use_ECC:
-            secret_pred, detected, version = self.ecc.decode_bitstream(secret_pred, MODE)[0]
-            return secret_pred, detected, version
+            secret_pred, detected, version = self.ecc.decode_bitstream(secret_binaryarray, MODE)[0]
+            if not detected:
+                # last ditch attempt to recover a possible corruption of the version bits by trying all other schema types
+                modeset= [x for x in range(0,3) if x not in [version]] # not bch_3   
+                for m in modeset:
+                     if m==0:
+                        secret_binaryarray[0][-2]=False
+                        secret_binaryarray[0][-1]=False
+                     if m==1:
+                        secret_binaryarray[0][-2]=False
+                        secret_binaryarray[0][-1]=True
+                     if m==2:
+                        secret_binaryarray[0][-2]=True
+                        secret_binaryarray[0][-1]=False
+                     if m==3: 
+                        secret_binaryarray[0][-2]=True  
+                        secret_binaryarray[0][-1]=True
+                     secret_pred, detected, version = self.ecc.decode_bitstream(secret_binaryarray, MODE)[0]
+                     if (detected):
+                          return secret_pred, detected, version   
+                     else:
+                          return '', False, -1
+            else:
+                return secret_pred, detected, version
         else:
             assert len(secret_pred.shape)==2
             secret_pred = ''.join(str(int(x)) for x in secret_pred[0])
             return secret_pred, True, -1
-    
-    def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.9, WM_MERGE='bilinear'):
+         
+    def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.95, WM_MERGE='bilinear'):
         # Inputs
         #   cover_image: PIL image
         #   secret_tensor: (1, secret_len)
@@ -202,26 +224,12 @@ class TrustMark():
         cover = cover_image.resize((256,256), Image.BILINEAR)
         tic=time.time()
         cover = transforms.ToTensor()(cover).unsqueeze(0).to(self.encoder.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
-#        toc=time.time()
-#        print('CPU->GPU %f ms ' % ((toc-tic)*1000))
         with torch.no_grad():
-#            tic=time.time()
             stego, _ = self.encoder(cover, secret)
-#            toc=time.time()
-#            print('ML Inference %f ms' % ((toc-tic)*1000))
             residual = stego.clamp(-1, 1) - cover
             residual = torch.nn.functional.interpolate(residual, size=(h, w), mode=WM_MERGE)
-#            residual = torch.nn.functional.interpolate(residual, size=(int(h/4), int(w/4)), mode='bicubic')
-#            residual = torch.nn.functional.interpolate(residual, size=(int(h/2), int(w/2)), mode='bicubic')
-#            residual = torch.nn.functional.interpolate(residual, size=(h, w), mode='bicubic')
-#            tic=time.time()
             residual = residual.permute(0,2,3,1).cpu().numpy().astype('f4')  # (1,256,256,3)
-#            toc=time.time()
-#            print('GPU->CPU %f ms ' % ((toc-tic)*1000))
-#            tic=time.time()
             stego = np.clip(residual[0]*WM_STRENGTH + np.array(cover_image)/127.5-1., -1, 1)*127.5+127.5  # (256, 256, 3), ndarray, uint8
-#            toc=time.time()
-#            print('Apply residual %f ms' % ((toc-tic)*1000))
             
         return Image.fromarray(stego.astype(np.uint8))
 
