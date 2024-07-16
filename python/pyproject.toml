@@ -1,6 +1,6 @@
 [project]
 name = "trustmark"  
-version = "0.6.2"  
+version = "0.6.3"  
 description = "TrustMark: Universal Watermarking for Arbitrary Resolution Images"  
 readme = "README.md" 
 requires-python = ">=3.8.5"
@@ -10,7 +10,6 @@ license = {file = "LICENSE.txt"}
 keywords = ["watermarking", "CAI", "watermark", "Content Authenticity Initiative", "provenance"]  # Optional
 
 authors = [
-  {name = "Tu Bui", email = "t.v.bui@surrey.ac.uk" }, 
   {name = "Shruti Agarwal", email = "shragarw@adobe.com" },
   {name = "John Collomosse", email = "collomos@adobe.com" } 
 ]
