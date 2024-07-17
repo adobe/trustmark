@@ -1,6 +1,6 @@
 # TrustMark - Universal Watermarking for Arbitrary Resolution Images
 
-An Open Source, MIT licensed implementation of TrustMark watemarking for the Content Authenticity Initiative (CAI) as described in: 
+An Open Source, MIT licensed implementation of TrustMark watermarking for the Content Authenticity Initiative (CAI) as described in: 
 
 **TrustMark - Universal Watermarking for Arbitrary Resolution Images**
 
@@ -91,9 +91,9 @@ The raw 100 bits break down into D+E+V=100 bits, where D is the protect payload 
 
 ### Usage with C2PA
 
-TrustMark may be used to directly encode a 'soft binding' identifier, which may be used to look up provenace metadata (manifest). This identifier should be encoded via one of the Encoding types BCH_n described above.
+TrustMark may be used to directly encode a 'soft binding' identifier, which may be used to look up provenance metadata (manifest). This identifier should be encoded via one of the Encoding types BCH_n described above.
 
-TrustMark may alternatively be used to indicate the presence of another watermarking technology that carries an identifier.  In this mode the encoding should be Encoding.BCH_SUPER and the payload contain an integer identifer that describes the co-present watermarking technology.  This value should be taken from the C2PA Soft Binding Algorithm List.
+TrustMark may alternatively be used to indicate the presence of another watermarking technology that carries an identifier.  In this mode the encoding should be Encoding.BCH_SUPER and the payload contain an integer identifier that describes the co-present watermarking technology.  This value should be taken from the C2PA Soft Binding Algorithm List.
 
 An example of direct encoding for C2PA is included in `c2pa/c2pa_watermark_example.py` including the C2PA manifest that should be used to describe the watermark insertion.
 
