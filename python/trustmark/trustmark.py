@@ -192,8 +192,8 @@ class TrustMark():
             else:
                 return secret_pred, detected, version
         else:
-            assert len(secret_pred.shape)==2
-            secret_pred = ''.join(str(int(x)) for x in secret_pred[0])
+            assert len(secret_binaryarray.shape)==2
+            secret_pred = ''.join(str(int(x)) for x in secret_binaryarray[0])
             return secret_pred, True, -1
          
     def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.95, WM_MERGE='bilinear'):
