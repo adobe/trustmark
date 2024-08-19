@@ -48,6 +48,9 @@ MODEL_CHECKSUMS['encoder_B.ckpt']="e6ab35b3f2d02f37b418726a2dc0b9c9"
 MODEL_CHECKSUMS['trustmark_rm_B.yaml']="0952cd4de245c852840f22d096946db8"
 MODEL_CHECKSUMS['trustmark_rm_B.ckpt']="eb4279e0301973112b021b1440363401"
 
+
+ASPECT_RATIO_LIM = 2.0
+
 class TrustMark():
 
     class Encoding:
@@ -156,11 +159,57 @@ class TrustMark():
 
         return model
 
+    def get_the_image_for_processing(self, in_image):
 
-    def decode(self, stego_image, MODE='text'):
+        # get the aspect ratio
+        width, height = in_image.size
+        if width>height:
+            aspect_ratio = width/height
+        else:
+            aspect_ratio = height/width
+
+        out_im = in_image.copy()
+        if aspect_ratio>ASPECT_RATIO_LIM:
+            # crop the image in the center
+            size = min([width, height])
+            left = (width - size) // 2
+            top = (height - size) // 2
+            right = (width + size) // 2
+            bottom = (height + size) // 2
+            out_im = out_im.crop((left, top, right, bottom))
+
+        return out_im
+
+
+    def put_the_image_after_processing(self, wm_image, cover_im):
+
+        # get the aspect ratio
+        height, width, _ = cover_im.shape
+        if width>height:
+             aspect_ratio = width/height
+        else:
+             aspect_ratio = height/width
+
+        out_im = wm_image.copy()
+        if aspect_ratio>ASPECT_RATIO_LIM:
+            # crop the image in the center
+            size = min([width, height])
+            left = (width - size) // 2
+            top = (height - size) // 2
+            right = (width + size) // 2
+            bottom = (height + size) // 2
+
+            out_im = cover_im.copy()
+            out_im[top:bottom, left:right, :] = wm_image.copy()
+
+        return out_im
+
+
+    def decode(self, in_stego_image, MODE='text'):
         # Inputs
         # stego_image: PIL image
         # Outputs: secret numpy array (1, secret_len)
+        stego_image = self.get_the_image_for_processing(in_stego_image)
         if min(stego_image.size) > 256:
             stego_image = stego_image.resize((256,256), Image.BILINEAR)
         stego = transforms.ToTensor()(stego_image).unsqueeze(0).to(self.decoder.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
@@ -196,7 +245,7 @@ class TrustMark():
             secret_pred = ''.join(str(int(x)) for x in secret_binaryarray[0])
             return secret_pred, True, -1
          
-    def encode(self, cover_image, string_secret, MODE='text', WM_STRENGTH=0.95, WM_MERGE='bilinear'):
+    def encode(self, in_cover_image, string_secret, MODE='text', WM_STRENGTH=0.95, WM_MERGE='bilinear'):
         # Inputs
         #   cover_image: PIL image
         #   secret_tensor: (1, secret_len)
@@ -219,7 +268,7 @@ class TrustMark():
                 secret = self.ecc.encode_text([string_secret])
         secret = torch.from_numpy(secret).float().to(self.device)
         
-        
+        cover_image = self.get_the_image_for_processing(in_cover_image)
         w, h = cover_image.size
         cover = cover_image.resize((256,256), Image.BILINEAR)
         tic=time.time()
@@ -230,7 +279,8 @@ class TrustMark():
             residual = torch.nn.functional.interpolate(residual, size=(h, w), mode=WM_MERGE)
             residual = residual.permute(0,2,3,1).cpu().numpy().astype('f4')  # (1,256,256,3)
             stego = np.clip(residual[0]*WM_STRENGTH + np.array(cover_image)/127.5-1., -1, 1)*127.5+127.5  # (256, 256, 3), ndarray, uint8
-            
+            stego = self.put_the_image_after_processing(stego, np.asarray(in_cover_image).astype(np.uint8))
+
         return Image.fromarray(stego.astype(np.uint8))
 
     @torch.no_grad()
