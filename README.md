@@ -97,19 +97,6 @@ TrustMark may alternatively be used to indicate the presence of another watermar
 
 An example of direct encoding for C2PA is included in `c2pa/c2pa_watermark_example.py` including the C2PA manifest that should be used to describe the watermark insertion.
 
-### Quickstart with CUDA
-
-TrustMark will detect if CUDA is available and use GPU if so, else default to CPU encode/decode.
-
-The following clean install should work for getting up and running on GPU using the python implementation in this repo.
-
-```
-conda create --name trustmark python=3.10
-conda activate trustmark
-conda install pytorch cudatoolkit=12.8 -c pytorch -c conda-forge
-pip install torch==2.1.2 torchvision==0.16.2 -f https://download.pytorch.org/whl/torch_stable.html
-pip install .
-```
 
 ## Citation
 
