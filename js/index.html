@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<!--
+ TrustMark JS / Client-side Decoder Demonstration - minimal example
+ Copyright 2024 Adobe. All rights reserved.
+ Licensed under the MIT License.
+ 
+ NOTICE: Adobe permits you to use, modify, and distribute this file in
+ accordance with the terms of the Adobe license agreement accompanying it.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TrustMark JS / Client-side Decode Demonstrator</title>
+  <script src="deps/ort.min.js"></script>
+  <script src="deps/bch_ecc.min.js"></script>
+  <script src="tm_datalayer.js"></script>
+  <script src="tm_watermark.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+    }
+
+    body {
+      background-color: #f2f2f2;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 30px;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .upload-container {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Drop Zone styling */
+    #drop-zone {
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      width: 100%;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.3s ease;
+      cursor: pointer;
+      text-align: center;
+      margin-bottom: 20px;
+      color: #999;
+      padding: 20px;
+    }
+    #drop-zone.hover {
+      border-color: #999;
+      color: #666;
+    }
+    #drop-zone p {
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #666;
+    }
+
+    .browse-btn {
+      background: #007aff;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.2s;
+    }
+    .browse-btn:hover {
+      background: #005bb5;
+    }
+
+    /* Preview & Decoder Output */
+    .preview-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-top: 20px;
+      width: 100%;
+      align-items: center;
+    }
+    #preview-image {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      object-fit: contain;
+    }
+    #decoder-output {
+      width: 100%;
+      min-height: 200px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      font-family: monospace;
+      background-color: #fafafa;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>TrustMark JS / Client-side Decode Demonstrator</h1>
+  <div class="upload-container">
+    <div id="drop-zone">
+      <p>Drag &amp; drop your image here</p>
+      <p>— or —</p>
+      <button class="browse-btn" id="browse-btn">Browse Files</button>
+    </div>
+  
+    <!-- Hidden input to handle file selection -->
+    <input type="file" id="file-input" accept="image/*" style="display: none;">
+  
+    <!-- Preview & Decoder Output -->
+    <div class="preview-container" style="display: none;">
+      <img id="preview-image" src="" alt="Preview">
+      <div id="decoder-output">Watermark output will appear here...</div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const browseBtn = document.getElementById('browse-btn');
+    const previewContainer = document.querySelector('.preview-container');
+    const previewImage = document.getElementById('preview-image');
+    const decoderOutput = document.getElementById('decoder-output');
+
+    const WATERMARK_MODELS_READY = () => session_wmark && session_resize;
+
+    // Logging function
+    function LOG(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      decoderOutput.textContent += `[${timestamp}] ${message}\n`;
+      decoderOutput.scrollTop = decoderOutput.scrollHeight;
+    }
+
+    // -- DRAG & DROP FUNCTIONALITY --
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => e.preventDefault(), false);
+      document.body.addEventListener(eventName, (e) => e.preventDefault(), false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => {
+        dropZone.classList.add('hover');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => {
+        dropZone.classList.remove('hover');
+      }, false);
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length) {
+        handleFile(files[0]);
+      }
+    });
+
+    browseBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) {
+        handleFile(fileInput.files[0]);
+      }
+    });
+
+    function scaleImage(base64Data, targetWidth, targetHeight) {
+      const img = new Image();
+      img.src = base64Data;
+
+      return new Promise((resolve) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const aspectRatio = img.width / img.height;
+
+          if (img.width > img.height) {
+            canvas.width = targetWidth;
+            canvas.height = targetWidth / aspectRatio;
+          } else {
+            canvas.height = targetHeight;
+            canvas.width = targetHeight * aspectRatio;
+          }
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL());
+        };
+      });
+    }
+
+    async function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file!');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async function (e) {
+        const base64Data = e.target.result;
+        const scaledImage = await scaleImage(base64Data, 500, 300);
+        previewImage.src = scaledImage;
+        previewContainer.style.display = 'flex';
+ 
+        decoderOutput.textContent='';//clear log
+        LOG("Decoding watermark...");
+
+        const decodeInterval = setInterval(() => {
+          if (WATERMARK_MODELS_READY()) {
+            clearInterval(decodeInterval);
+            decodeImage(scaledImage)
+              .then((result) => {
+                LOG(result || "No watermark detected.");
+              })
+              .catch((error) => {
+                console.error("Error decoding watermark:", error);
+                LOG("Error decoding watermark.");
+              });
+          }
+        }, 100);
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    async function decodeImage(base64Image) {
+      try {
+        const data = await runwmark(base64Image);
+        if (data.watermark_present) {
+          return `Watermark Found (${data.schema}):\n${data.watermark}\nC2PA Assertion:\n`+JSON.stringify(data.c2padata, null, 2);
+        } else {
+          return "No watermark detected.";
+        }
+      } catch (error) {
+        console.error("Error decoding watermark:", error);
+        return "Error decoding watermark.";
+      }
+    }
+  </script>
+
+</body>
+</html>
+
