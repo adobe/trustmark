@@ -170,7 +170,7 @@ function formatSoftBindingData(encodedData, version) {
 
     return {
       "c2pa.soft-binding": {
-        "alg": "com.adobe.trustmark.Q",
+        "alg": `com.adobe.trustmark.${TRUSTMARK_VARIANT}`,
         "blocks": [
           {
             "scope": {},
