@@ -19,7 +19,7 @@ let session_resize;
 (async () => {
   let startTime = new Date();
   try {
-    session_resize = await ort.InferenceSession.create(`${MODEL_BASE_URL}resizer.onnx`);
+    session_resize = await ort.InferenceSession.create(`${MODEL_BASE_URL}resizer.onnx`); // It is important not to use webgpu here as it does not support antialias resize
     console.log(`Image resizing model loaded in ${(new Date() - startTime) / 1000} seconds`);
   } catch (error) {
     console.error("Could not load image resizing model", error);
@@ -27,7 +27,7 @@ let session_resize;
 
   startTime = new Date();
   try {
-    session_wmark = await ort.InferenceSession.create(`${MODEL_BASE_URL}decoder_${TRUSTMARK_VARIANT}.onnx`);
+    session_wmark = await ort.InferenceSession.create(`${MODEL_BASE_URL}decoder_${TRUSTMARK_VARIANT}.onnx`, {executionProviders: ['webgpu'] });
     console.log(`Watermark detection model loaded in ${(new Date() - startTime) / 1000} seconds`);
   } catch (error) {
     console.error("Could not load watermark detection model", error);
@@ -161,12 +161,15 @@ async function runwmark(base64Image) {
     if (!resizedTensorWM) throw new Error("Failed to resize tensor for watermark detection.");
 
     const feeds = { image: resizedTensorWM };
+
+    let startTime = new Date();
     const results = await session_wmark.run(feeds);
 
     const watermarkFloat = results['output']['cpuData'];
     const watermarkBool = watermarkFloat.map((v) => v >= 0);
 
     const dataObj = DataLayer_Decode(watermarkBool, eccengine);
+    console.log(`Watermark model inference in ${(new Date() - startTime)} milliseconds`);
 
     return {
       watermark_present: dataObj.valid,
