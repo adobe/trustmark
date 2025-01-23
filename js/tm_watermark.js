@@ -7,33 +7,64 @@
  * accordance with the terms of the Adobe license agreement accompanying it.
  */ 
 
-// Constants for model loading and configurations
+// Source for ONNX model binaries
 const MODEL_BASE_URL = "https://cc-assets.netlify.app/watermarking/trustmark-models/";
-const TRUSTMARK_VARIANT = "P";
-const WATERMARK_THUMB_SIZE = 224;
-const FORCE_SQUARE = true;
 
-let session_wmark;
+// List all watermark models for decoding
+const modelConfigs = [
+  { variantcode: 'Q', fname: 'decoder_Q', sessionVar: 'session_wmarkQ', resolution: 256, squarecrop: false }, 
+  { variantcode: 'P', fname: 'decoder_P', sessionVar: 'session_wmarkP', resolution: 224, squarecrop: true },
+];
+
+const sessions = {};
 let session_resize;
 
-// Asynchronously load ONNX models for watermark detection and resizing
+// Load model immediately
 (async () => {
+  for (const config of modelConfigs) {
+    let startTime = new Date();
+    try {
+      sessions[config.sessionVar] = await ort.InferenceSession.create(`${config.fname}.onnx`, { executionProviders: ['webgpu'] });
+      let timeElapsed = new Date() - startTime;
+      console.log(`${config.fname} model loaded in ${timeElapsed / 1000} seconds`);
+    } catch (error) {
+      console.error(`Could not load ${config.fname} watermark decoder model`, error);
+    }
+  }
   let startTime = new Date();
   try {
-    session_resize = await ort.InferenceSession.create(`${MODEL_BASE_URL}resizer.onnx`); // It is important not to use webgpu here as it does not support antialias resize
-    console.log(`Image resizing model loaded in ${(new Date() - startTime) / 1000} seconds`);
-  } catch (error) {
-    console.error("Could not load image resizing model", error);
+       session_resize = await ort.InferenceSession.create('resizer.onnx', { executionProviders: ['wasm'] });  // cannot use GPU for this due to lack of antialias
+       let timeElapsed = new Date() - startTime;
+       console.log(`Image downscaler model loaded in ${timeElapsed / 1000} seconds`);
   }
-
-  startTime = new Date();
-  try {
-    session_wmark = await ort.InferenceSession.create(`${MODEL_BASE_URL}decoder_${TRUSTMARK_VARIANT}.onnx`, {executionProviders: ['webgpu'] });
-    console.log(`Watermark detection model loaded in ${(new Date() - startTime) / 1000} seconds`);
-  } catch (error) {
-    console.error("Could not load watermark detection model", error);
+  catch (error) {
+     console.log('Could not load image downscaler model', error);
+     console.log(error)
   }
 })();
+
+
+/* WebGPU will fail silently and intermittently if multiple concurrent inference calls are made
+   this routine ensures sequential calling from multiple threads.  Note this simple JS demo is single threaded. */
+let inferenceLock = false;
+
+async function safeRunInference(session, feed) {
+  while (inferenceLock) {
+    // Wait for any ongoing inference
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
+      
+  inferenceLock = true; // Lock inference
+  try {
+    return await session.run(feed); // Run the inference
+  } catch (error) {
+    console.error("Inference error:", error); // Log any error
+    throw error; // Rethrow for further debugging
+  } finally {
+    inferenceLock = false; // Unlock after inference
+  }
+}
+     
 
 /**
  * Converts an image URL to a tensor suitable for processing.
@@ -126,7 +157,7 @@ function computeScalesFixed(targetDims, inputDims) {
  * @param {number} targetSize - The target size for resizing.
  * @returns {Promise<ort.Tensor>} The resized tensor.
  */
-async function runResizeModelSquare(inputTensor, targetSize) {
+async function runResizeModelSquare(inputTensor, targetSize, force_square) {
     try {
         const inputDims = inputTensor.dims;  // Get dimensions of the input tensor
         const [batch, channels, height, width] = inputDims;
@@ -140,13 +171,13 @@ async function runResizeModelSquare(inputTensor, targetSize) {
         let cropHeight = height;
         
         // If the aspect ratio is greater than 2.0, we need to crop the center square
-        if (lscape && (aspectRatio > 2.0 || FORCE_SQUARE)) {
+        if (lscape && (aspectRatio > 2.0 || force_square)) {
             cropWidth = height;  // Take a square from the width
             const offsetX = Math.floor((width - cropWidth) / 2);  // Horizontal center crop
             croppedTensor = await cropTensor(inputTensor, offsetX, 0, cropWidth, height);
         }
         
-        if (!lscape && (aspectRatio < 0.5 || FORCE_SQUARE)) {
+        if (!lscape && (aspectRatio < 0.5 || force_square)) {
             cropHeight = width;  // Take a square from the height
             const offsetY = Math.floor((height - cropHeight) / 2);  // Vertical center crop
             croppedTensor = await cropTensor(inputTensor, 0, offsetY, width, cropHeight);
@@ -195,28 +226,6 @@ async function cropTensor(inputTensor, offsetX, offsetY, cropWidth, cropHeight) 
     return new ort.Tensor('float32', croppedData, [batch, channels, cropHeight, cropWidth]);
 }                  
 
-async function oldrunResizeModelSquare(inputTensor, targetSize) {
-  try {
-    const [batch, channels, height, width] = inputTensor.dims;
-    const targetDims = [targetSize, targetSize];
-
-    const scales = computeScalesFixed(targetDims, inputTensor.dims);
-    const scalesTensor = new ort.Tensor('float32', scales, [4]);
-    const targetSizeTensor = new ort.Tensor('int64', new BigInt64Array([BigInt(targetSize)]), [1]);
-
-    const feeds = {
-      X: inputTensor,
-      scales: scalesTensor,
-      target_size: targetSizeTensor,
-    };
-
-    const results = await session_resize.run(feeds);
-    return results['Y'];
-  } catch (error) {
-    console.error("Error during resizing:", error);
-    return null;
-  }
-}
 
 /**
  * Decodes the watermark from the processed image tensor.
@@ -224,32 +233,60 @@ async function oldrunResizeModelSquare(inputTensor, targetSize) {
  * @returns {Promise<object>} Decoded watermark data.
  */
 async function runwmark(base64Image) {
+
+  let watermarks=[]
+  let watermarks_present=[];
   try {
+
     const inputTensor = await loadImageAsTensor(base64Image);
 
-    const resizedTensorWM = await runResizeModelSquare(inputTensor, WATERMARK_THUMB_SIZE);
-    if (!resizedTensorWM) throw new Error("Failed to resize tensor for watermark detection.");
+    for (const config of modelConfigs) {
 
-    const feeds = { image: resizedTensorWM };
+        const session = sessions[config.sessionVar];
+        if (!session) {
+          console.error(`Session for ${config.fname} not loaded, skipping.`);
+          continue;
+        }
 
-    let startTime = new Date();
-    const results = await session_wmark.run(feeds);
 
-    const watermarkFloat = results['output']['cpuData'];
-    const watermarkBool = watermarkFloat.map((v) => v >= 0);
+        const resizedTensorWM = await runResizeModelSquare(inputTensor, config.resolution, config.squarecrop);
+        if (!resizedTensorWM) throw new Error("Failed to resize tensor for watermark detection.");
 
-    const dataObj = DataLayer_Decode(watermarkBool, eccengine);
-    console.log(`Watermark model inference in ${(new Date() - startTime)} milliseconds`);
+        const feeds = { image: resizedTensorWM };
 
-    return {
-      watermark_present: dataObj.valid,
-      watermark: dataObj.valid ? dataObj.data_binary : null,
-      schema: dataObj.schema,
-      c2padata: dataObj.softBindingInfo,
-    };
-  } catch (error) {
-    console.error("Error in watermark decoding:", error);
-    return { watermark_present: false, watermark: null, schema: null };
-  }
+        let startTime = new Date();
+        const results = await safeRunInference(session, feeds);
+
+        const watermarkFloat = results['output']['cpuData'];
+        const watermarkBool = watermarkFloat.map((v) => v >= 0);
+
+        const dataObj = DataLayer_Decode(watermarkBool, eccengine, config.variantcode);
+        console.log(`Watermark model inference in ${(new Date() - startTime)} milliseconds`);
+
+        // Append results to arrays
+        watermarks.push(dataObj);
+        watermarks_present.push(dataObj.valid);
+    }
+
+   } catch (error) {
+     console.error("Error in watermark decoding:", error);
+     return { watermark_present: false, watermark: null, schema: null };
+   }
+
+   // Get first detected watermark (if many were)
+   const firstValidIndex = watermarks_present.findIndex(isValid => isValid === true);
+   let watermark;
+   let watermark_present=false;
+   if (firstValidIndex !== -1) {
+      watermark = watermarks[firstValidIndex];
+
+      return {
+         watermark_present: watermark.valid,
+         watermark: watermark.valid ? watermark.data_binary : null,
+         schema: watermark.schema,
+         c2padata: watermark.softBindingInfo,
+      };
+   }
+
 }
 

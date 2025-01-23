@@ -21,7 +21,7 @@ for (let version = 0; version < 4; version++) {
  * @param {Array<Object>} eccengine - Array of ECC engines for decoding.
  * @returns {Object} Decoded watermark data with schema and soft binding info.
  */
-function DataLayer_Decode(watermarkbool, eccengine) {
+function DataLayer_Decode(watermarkbool, eccengine, variant) {
   let version = DataLayer_GetVersion(watermarkbool);
   let databits = DataLayer_GetSchemaDataBits(version);
 
@@ -47,7 +47,7 @@ function DataLayer_Decode(watermarkbool, eccengine) {
   }
 
   // Add soft binding information
-  dataobj.softBindingInfo = formatSoftBindingData(dataobj.data_binary, version);
+  dataobj.softBindingInfo = formatSoftBindingData(dataobj.data_binary, version, variant);
   return dataobj;
 }
 
@@ -162,7 +162,7 @@ function DataLayer_GetSchemaName(version) {
  * @param {number} version - The schema version.
  * @returns {Object|null} Formatted JSON object or null in case of errors.
  */
-function formatSoftBindingData(encodedData, version) {
+function formatSoftBindingData(encodedData, version, variant) {
   try {
     const binaryString = Array.isArray(encodedData)
       ? encodedData.join('')
@@ -170,7 +170,7 @@ function formatSoftBindingData(encodedData, version) {
 
     return {
       "c2pa.soft-binding": {
-        "alg": `com.adobe.trustmark.${TRUSTMARK_VARIANT}`,
+        "alg": `com.adobe.trustmark.${variant}`,
         "blocks": [
           {
             "scope": {},

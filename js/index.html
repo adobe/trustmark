@@ -150,7 +150,7 @@
     const previewImage = document.getElementById('preview-image');
     const decoderOutput = document.getElementById('decoder-output');
 
-    const WATERMARK_MODELS_READY = () => session_wmark && session_resize;
+    const WATERMARK_MODELS_READY = () => !( (Object.values(sessions).some(session => !session) || !session_resize));
 
     // Logging function
     function LOG(message) {
@@ -245,6 +245,9 @@
                 console.error("Error decoding watermark:", error);
                 LOG("Error decoding watermark.");
               });
+          }
+          else {
+            console.log('Waiting for models to load');
           }
         }, 100);
       };
