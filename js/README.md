@@ -17,22 +17,13 @@ The demonstrator consists of key modules that handle image preprocessing, waterm
 
 ## Key Parameters
 
-## How It Works
-1. **Image Preprocessing**
-   - Images are loaded into tensors and resized to the target size using the `runResizeModelSquare` function.
-   - Extreme aspect ratios are handled with center cropping to ensure square input dimensions.
-
-2. **Watermark Detection**
-   - The resized image tensor is passed to the watermark detection model.
-   - Detected watermark data is returned as an array of confidence scores.
-
-3. **Data Decoding**
-   - The watermark data is interpreted and decoded based on the schema version (e.g., BCH_SUPER).
-   - Decoded data includes binary content, schema, and optionally, soft binding information.
+The desired TrustMark watermark variants for decoding may be listed in the `modelConfigs` array at the top of `tm_watermark.js` for example, B, C, Q and P varaints.
 
 ## Usage
 
 Open `index.html` in a browser to run the demonstrator or include the modules in your JavaScript project.
+
+The JS will use WebGPU to process the ONNX models, if GPU is available (check `chrome://gpu`).  If you use WebGPU it will only run in a secure context, which means off localhost or an https link.  You can start a local https server via the `server.py` and a suitable openssl cert in `server.pem`.
 
 ## Example Output
 For an image containing a TrustMark watermark:
