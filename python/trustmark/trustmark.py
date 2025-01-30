@@ -10,7 +10,6 @@ from __future__ import absolute_import
 import torch
 import os
 import pathlib
-import re
 import time
 import importlib
 
@@ -64,8 +63,10 @@ MODEL_CHECKSUMS['trustmark_rm_P.yaml']="8476bcd4092abf302272868f3b4c2e38"
 MODEL_CHECKSUMS['trustmark_rm_P.ckpt']="760337a5596e665aed2ab5c49aa5284f"
 
 
-CONCENTRATE_WM_REGION = 0.7
+CONCENTRATE_WM_REGION = 1.0
 ASPECT_RATIO_LIM = 2.0
+FALLBACK_ALL_SCHEMAS = True
+FEATHERING_RESIDUAL=0.01
 
 class TrustMark():
 
@@ -227,24 +228,21 @@ class TrustMark():
 
         return out_im
 
-    def put_the_image_after_processing(self, wm_image, cover_im):
+
+    def put_the_image_after_processing(self, wm_image, cover_im, feather=True):
 
         scale = self.concentrate_wm_region
-
         cover_h, cover_w, _ = cover_im.shape
 
-        # Compute aspect ratio (≥ 1.0)
         if cover_w > cover_h:
             aspect_ratio = cover_w / cover_h
         else:
             aspect_ratio = cover_h / cover_w
-        
-        # Start with a copy of the full cover
+
         out_im = cover_im.copy()
 
-        # Determine the region in cover_im to paste into
         if (aspect_ratio > self.aspect_ratio_lim):
-            # Same center-square logic, scaled
+            # Square region, scaled
             square_size = min(cover_w, cover_h)
             scaled_size = int(square_size * scale)
 
@@ -252,22 +250,89 @@ class TrustMark():
             top    = (cover_h - scaled_size) // 2
             right  = left + scaled_size
             bottom = top  + scaled_size
-            
-            out_im[top:bottom, left:right, :] = wm_image
-        
+
+            region_w = scaled_size
+            region_h = scaled_size
+
         else:
-            # Normal ratio, so the entire image footprint, scaled
+            # Normal ratio, scaled
             scaled_w = int(cover_w * scale)
             scaled_h = int(cover_h * scale)
-
             left   = (cover_w - scaled_w) // 2
             top    = (cover_h - scaled_h) // 2
             right  = left + scaled_w
             bottom = top  + scaled_h
 
+            region_w = scaled_w
+            region_h = scaled_h
+
+        if feather:
+
+            feather_size = int(min(region_w, region_h) * FEATHERING_RESIDUAL)
+        
+            feather_size = max(1, feather_size)      
+            feather_size = min(feather_size, 50)
+
+            self.feather_paste(
+                out_im,       # destination (modified in-place)
+                cover_im,     # original for reference
+                wm_image,     # watermark patch
+                top, bottom, left, right,
+                feather_size=feather_size
+            )
+        else:
             out_im[top:bottom, left:right, :] = wm_image
 
         return out_im
+
+    def feather_paste(self,
+        out_im: np.ndarray,     # Output image (modified in-place)
+        cover_im: np.ndarray,   # Original cover image (same shape)
+        wm_image: np.ndarray,   # Watermarked patch to paste
+        top: int, bottom: int,
+        left: int, right: int,
+        feather_size: int = 9):
+    
+        out_im[top:bottom, left:right, :] = wm_image
+        alpha_vals = [ (i+1) / feather_size for i in range(feather_size) ]
+    
+        feather_size = min(feather_size, (bottom - top), (right - left))
+    
+        for i in range(feather_size):
+            alpha = alpha_vals[i]
+            row = top + i
+            # Blend that entire row from left..right
+            out_im[row, left:right, :] = (
+                alpha * wm_image[i, :, :] +
+                (1.0 - alpha) * cover_im[row, left:right, :]
+            )
+        
+        for i in range(feather_size):
+            alpha = alpha_vals[i]
+            row = bottom - 1 - i
+            wm_row = (bottom - top - 1) - i
+            out_im[row, left:right, :] = (
+                alpha * wm_image[wm_row, :, :] +
+                (1.0 - alpha) * cover_im[row, left:right, :]
+            )
+    
+        for i in range(feather_size):
+            alpha = alpha_vals[i]
+            col = left + i
+            out_im[top:bottom, col, :] = (
+                alpha * wm_image[:, i, :] +
+                (1.0 - alpha) * cover_im[top:bottom, col, :]
+            )
+    
+        for i in range(feather_size):
+            alpha = alpha_vals[i]
+            col = right - 1 - i
+            wm_col = (right - left - 1) - i
+            out_im[top:bottom, col, :] = (
+                alpha * wm_image[:, wm_col, :] +
+                (1.0 - alpha) * cover_im[top:bottom, col, :]
+            )
+    
 
 
     def decode(self, in_stego_image, MODE='text'):
@@ -275,14 +340,13 @@ class TrustMark():
         # stego_image: PIL image
         # Outputs: secret numpy array (1, secret_len)
         stego_image = self.get_the_image_for_processing(in_stego_image)
-#        if min(stego_image.size) > self.model_resolution_dec:
         stego_image = stego_image.resize((self.model_resolution_dec,self.model_resolution_dec), Image.BILINEAR)
         stego = transforms.ToTensor()(stego_image).unsqueeze(0).to(self.decoder.device) * 2.0 - 1.0 # (1,3,modelres,modelres) in range [-1, 1]
         with torch.no_grad():
             secret_binaryarray = (self.decoder.decoder(stego) > 0).cpu().numpy()  # (1, secret_len)
         if self.use_ECC:
             secret_pred, detected, version = self.ecc.decode_bitstream(secret_binaryarray, MODE)[0]
-            if not detected:
+            if not detected and FALLBACK_ALL_SCHEMAS:
                 # last ditch attempt to recover a possible corruption of the version bits by trying all other schema types
                 modeset= [x for x in range(0,3) if x not in [version]] # not bch_3   
                 for m in modeset:
@@ -332,7 +396,7 @@ class TrustMark():
             else:
                 secret = self.ecc.encode_text([string_secret])
         if self.model_type == 'P':
-            WM_STRENGTH = WM_STRENGTH * 1.35
+            WM_STRENGTH = WM_STRENGTH * 1.25
         secret = torch.from_numpy(secret).float().to(self.device)
         
         cover_image = self.get_the_image_for_processing(in_cover_image)
@@ -343,6 +407,10 @@ class TrustMark():
         with torch.no_grad():
             stego, _ = self.encoder(cover, secret)
             residual = stego.clamp(-1, 1) - cover
+
+            residual_mean_c = residual.mean(dim=(2,3), keepdim=True)  # remove color shifts per channel
+            residual = residual - residual_mean_c
+
             residual = torch.nn.functional.interpolate(residual, size=(h, w), mode=WM_MERGE)
             residual = residual.permute(0,2,3,1).cpu().numpy().astype('f4')  # (1,modelres,modelres,3)
             stego = np.clip(residual[0]*WM_STRENGTH + np.array(cover_image)/127.5-1., -1, 1)*127.5+127.5  # (modelres, modelres, 3), ndarray, uint8
