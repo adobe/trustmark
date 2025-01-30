@@ -11,7 +11,7 @@ with open("README.md", "r") as f:
     long_description = f.read()
 
 setup(name='trustmark',
-    version='0.7.0',
+    version='0.8.0',
     python_requires='>=3.8.5',
     description='High fidelty image watermarking for the Content Authenticity Initiative (CAI)',
     url='https://github.com/adobe/trustmark',

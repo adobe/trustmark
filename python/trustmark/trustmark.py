@@ -30,25 +30,41 @@ from mmap import mmap, ACCESS_READ
 MODEL_REMOTE_HOST = "https://cc-assets.netlify.app/watermarking/trustmark-models/"
 
 MODEL_CHECKSUMS=dict()
+
+# C variant is a compact version of TrustMark, using a ResNet-18 decoder
+# This is convenient for resource constrained deployments but lowers the PSNR to 38-39 typical
 MODEL_CHECKSUMS['trustmark_C.yaml']="4ee4a79c091f9263c949bd0cb590eb74"
 MODEL_CHECKSUMS['decoder_C.ckpt']="ab3fa5678a86c006bb162e5cc90501d3"
 MODEL_CHECKSUMS['encoder_C.ckpt']="c22bd5f675ee2cf2a6b18f3c2cbcc507"
 MODEL_CHECKSUMS['trustmark_rm_C.yaml']="8476bcd4092abf302272868f3b4c2e38"
 MODEL_CHECKSUMS['trustmark_rm_C.ckpt']="5ca3d651d9cde175433cebdf437e412f"
 
+# Q variant was published with the original 2023 paper and strikes a good robustness/quality tradeoff
+# using a ResNet50 backbone.  Q yields typical PSNR around 43 and most people use this as default.
 MODEL_CHECKSUMS['trustmark_Q.yaml']="fe40df84a7feeebfceb7a7678d7e6ec6"
 MODEL_CHECKSUMS['decoder_Q.ckpt']="4ced90e9cfe13e3295ad082887fe9187"
 MODEL_CHECKSUMS['encoder_Q.ckpt']="700328b8754db934b2f6cb5e5185d81f"
 MODEL_CHECKSUMS['trustmark_rm_Q.yaml']="8476bcd4092abf302272868f3b4c2e38"
 MODEL_CHECKSUMS['trustmark_rm_Q.ckpt']="760337a5596e665aed2ab5c49aa5284f"
 
+# B variant is very similar to Q variant, but had slightly higher robustness vs. quality it is included
+# here as presented in the original 2023 paper for purposes of reproducing the results
 MODEL_CHECKSUMS['trustmark_B.yaml']="fe40df84a7feeebfceb7a7678d7e6ec6"
 MODEL_CHECKSUMS['decoder_B.ckpt']="c4aaa4a86e551e6aac7f309331191971"
 MODEL_CHECKSUMS['encoder_B.ckpt']="e6ab35b3f2d02f37b418726a2dc0b9c9"
 MODEL_CHECKSUMS['trustmark_rm_B.yaml']="0952cd4de245c852840f22d096946db8"
 MODEL_CHECKSUMS['trustmark_rm_B.ckpt']="eb4279e0301973112b021b1440363401"
 
+# P variant is trained with higher weight on perceptual loss over diverse data and is the highest visual
+# quality variant of TrustMark whilst still retaining good robustness, PSNR typically 46-48
+MODEL_CHECKSUMS['trustmark_P.yaml']="fe40df84a7feeebfceb7a7678d7e6ec6"
+MODEL_CHECKSUMS['decoder_P.ckpt']="9450972bc0c3c217cb7b8220dd2f7a3c"
+MODEL_CHECKSUMS['encoder_P.ckpt']="0a18f6de6d57c6ef7dda30ce6154a775"
+MODEL_CHECKSUMS['trustmark_rm_P.yaml']="8476bcd4092abf302272868f3b4c2e38"
+MODEL_CHECKSUMS['trustmark_rm_P.ckpt']="760337a5596e665aed2ab5c49aa5284f"
 
+
+CONCENTRATE_WM_REGION = 0.7
 ASPECT_RATIO_LIM = 2.0
 
 class TrustMark():
@@ -60,7 +76,7 @@ class TrustMark():
        BCH_4=2
        BCH_5=1
 
-    def __init__(self, use_ECC=True, verbose=True, secret_len=100, device='', model_type='Q', encoding_type=Encoding.BCH_5):
+    def __init__(self, use_ECC=True, verbose=True, secret_len=100, device='', model_type='Q', encoding_type=Encoding.BCH_5, concentrate_wm_region=CONCENTRATE_WM_REGION):
         """ Initializes the TrustMark watermark encoder/decoder/remover module
 
         Parameters (default listed first)
@@ -85,7 +101,7 @@ class TrustMark():
             print('Initializing TrustMark watermarking %s ECC using [%s]' % ('with' if use_ECC else 'without',self.device))
 
         # the location of three models
-        assert model_type in ['C', 'Q', 'B']
+        assert model_type in ['C', 'Q', 'B', 'P']
         self.model_type = model_type
 
 
@@ -95,10 +111,21 @@ class TrustMark():
                    'remover': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/trustmark_rm_{self.model_type}.ckpt'),
                    'encoder': os.path.join(pathlib.Path(__file__).parent.resolve(),f'models/encoder_{self.model_type}.ckpt')}
 
-        self.use_ECC=use_ECC
-        self.secret_len=secret_len
+        self.use_ECC = use_ECC
+        self.secret_len = secret_len
         self.ecc = DataLayer(secret_len, verbose=verbose, encoding_mode=encoding_type)
-        self.enctyp=encoding_type
+        self.enctyp = encoding_type
+        self.aspect_ratio_lim=ASPECT_RATIO_LIM
+        self.concentrate_wm_region=concentrate_wm_region
+
+        if model_type=='P':
+           self.model_resolution_enc = 256
+           self.model_resolution_dec = 224
+           self.aspect_ratio_lim=0 # always force to centre square crop
+        else:
+           self.model_resolution_enc = 256
+           self.model_resolution_dec = 245
+        self.model_resolution_remove = 256
         
         self.decoder = self.load_model(locations['config'], locations['decoder'], self.device, secret_len, part='decoder')
         self.encoder = self.load_model(locations['config'], locations['encoder'], self.device, secret_len, part='encoder')
@@ -115,7 +142,6 @@ class TrustMark():
         valid=False
         if os.path.isfile(filename) and os.path.getsize(filename)>0:
             with open(filename) as file, mmap(file.fileno(), 0, access=ACCESS_READ) as file:
-#                print(filename+'-> '+md5(file).hexdigest())
                  valid= (MODEL_CHECKSUMS[pathlib.Path(filename).name]==md5(file).hexdigest())
 
         if not valid:
@@ -160,47 +186,86 @@ class TrustMark():
         return model
 
     def get_the_image_for_processing(self, in_image):
-
-        # get the aspect ratio
+        scale=self.concentrate_wm_region
         width, height = in_image.size
-        if width>height:
-            aspect_ratio = width/height
+        
+        # Compute aspect ratio (≥ 1.0)
+        if width > height:
+            aspect_ratio = width / height
         else:
-            aspect_ratio = height/width
-
+            aspect_ratio = height / width
+        
+        # Make a copy of the image (PIL)
         out_im = in_image.copy()
-        if aspect_ratio>ASPECT_RATIO_LIM:
-            # crop the image in the center
-            size = min([width, height])
-            left = (width - size) // 2
-            top = (height - size) // 2
-            right = (width + size) // 2
-            bottom = (height + size) // 2
+
+        if (aspect_ratio > self.aspect_ratio_lim):
+            # We do a center-square approach, but scaled
+            square_size = min(width, height)  # largest possible square dimension
+            scaled_size = int(square_size * scale)  # scale that dimension
+
+            # Compute bounding box
+            left   = (width  - scaled_size) // 2
+            top    = (height - scaled_size) // 2
+            right  = left + scaled_size
+            bottom = top  + scaled_size
+            
+            out_im = out_im.crop((left, top, right, bottom))
+        
+        else:
+            # The aspect ratio is normal, so we consider
+            # the *entire* image dimension. Then scale that region
+            scaled_w = int(width  * scale)
+            scaled_h = int(height * scale)
+            
+            # Center the smaller (or bigger) rectangle
+            left   = (width  - scaled_w) // 2
+            top    = (height - scaled_h) // 2
+            right  = left + scaled_w
+            bottom = top  + scaled_h
+            
             out_im = out_im.crop((left, top, right, bottom))
 
         return out_im
 
-
     def put_the_image_after_processing(self, wm_image, cover_im):
 
-        # get the aspect ratio
-        height, width, _ = cover_im.shape
-        if width>height:
-             aspect_ratio = width/height
+        scale = self.concentrate_wm_region
+
+        cover_h, cover_w, _ = cover_im.shape
+
+        # Compute aspect ratio (≥ 1.0)
+        if cover_w > cover_h:
+            aspect_ratio = cover_w / cover_h
         else:
-             aspect_ratio = height/width
+            aspect_ratio = cover_h / cover_w
+        
+        # Start with a copy of the full cover
+        out_im = cover_im.copy()
 
-        out_im = wm_image.copy()
-        if aspect_ratio>ASPECT_RATIO_LIM:
-            # crop the image in the center
-            size = min([width, height])
-            left = (width - size) // 2
-            top = (height - size) // 2
-            right = (width + size) // 2
-            bottom = (height + size) // 2
+        # Determine the region in cover_im to paste into
+        if (aspect_ratio > self.aspect_ratio_lim):
+            # Same center-square logic, scaled
+            square_size = min(cover_w, cover_h)
+            scaled_size = int(square_size * scale)
 
-            out_im = cover_im.copy()
-            out_im[top:bottom, left:right, :] = wm_image.copy()
+            left   = (cover_w - scaled_size) // 2
+            top    = (cover_h - scaled_size) // 2
+            right  = left + scaled_size
+            bottom = top  + scaled_size
+            
+            out_im[top:bottom, left:right, :] = wm_image
+        
+        else:
+            # Normal ratio, so the entire image footprint, scaled
+            scaled_w = int(cover_w * scale)
+            scaled_h = int(cover_h * scale)
+
+            left   = (cover_w - scaled_w) // 2
+            top    = (cover_h - scaled_h) // 2
+            right  = left + scaled_w
+            bottom = top  + scaled_h
+
+            out_im[top:bottom, left:right, :] = wm_image
 
         return out_im
 
@@ -210,9 +275,9 @@ class TrustMark():
         # stego_image: PIL image
         # Outputs: secret numpy array (1, secret_len)
         stego_image = self.get_the_image_for_processing(in_stego_image)
-        if min(stego_image.size) > 256:
-            stego_image = stego_image.resize((256,256), Image.BILINEAR)
-        stego = transforms.ToTensor()(stego_image).unsqueeze(0).to(self.decoder.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
+#        if min(stego_image.size) > self.model_resolution_dec:
+        stego_image = stego_image.resize((self.model_resolution_dec,self.model_resolution_dec), Image.BILINEAR)
+        stego = transforms.ToTensor()(stego_image).unsqueeze(0).to(self.decoder.device) * 2.0 - 1.0 # (1,3,modelres,modelres) in range [-1, 1]
         with torch.no_grad():
             secret_binaryarray = (self.decoder.decoder(stego) > 0).cpu().numpy()  # (1, secret_len)
         if self.use_ECC:
@@ -245,7 +310,7 @@ class TrustMark():
             secret_pred = ''.join(str(int(x)) for x in secret_binaryarray[0])
             return secret_pred, True, -1
          
-    def encode(self, in_cover_image, string_secret, MODE='text', WM_STRENGTH=0.95, WM_MERGE='bilinear'):
+    def encode(self, in_cover_image, string_secret, MODE='text', WM_STRENGTH=1.0, WM_MERGE='bilinear'):
         # Inputs
         #   cover_image: PIL image
         #   secret_tensor: (1, secret_len)
@@ -266,19 +331,21 @@ class TrustMark():
                 secret = self.ecc.encode_binary([string_secret])
             else:
                 secret = self.ecc.encode_text([string_secret])
+        if self.model_type == 'P':
+            WM_STRENGTH = WM_STRENGTH * 1.35
         secret = torch.from_numpy(secret).float().to(self.device)
         
         cover_image = self.get_the_image_for_processing(in_cover_image)
         w, h = cover_image.size
-        cover = cover_image.resize((256,256), Image.BILINEAR)
+        cover = cover_image.resize((self.model_resolution_enc,self.model_resolution_enc), Image.BILINEAR)
         tic=time.time()
-        cover = transforms.ToTensor()(cover).unsqueeze(0).to(self.encoder.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
+        cover = transforms.ToTensor()(cover).unsqueeze(0).to(self.encoder.device) * 2.0 - 1.0 # (1,3,modelres,modelres) in range [-1, 1]
         with torch.no_grad():
             stego, _ = self.encoder(cover, secret)
             residual = stego.clamp(-1, 1) - cover
             residual = torch.nn.functional.interpolate(residual, size=(h, w), mode=WM_MERGE)
-            residual = residual.permute(0,2,3,1).cpu().numpy().astype('f4')  # (1,256,256,3)
-            stego = np.clip(residual[0]*WM_STRENGTH + np.array(cover_image)/127.5-1., -1, 1)*127.5+127.5  # (256, 256, 3), ndarray, uint8
+            residual = residual.permute(0,2,3,1).cpu().numpy().astype('f4')  # (1,modelres,modelres,3)
+            stego = np.clip(residual[0]*WM_STRENGTH + np.array(cover_image)/127.5-1., -1, 1)*127.5+127.5  # (modelres, modelres, 3), ndarray, uint8
             stego = self.put_the_image_after_processing(stego, np.asarray(in_cover_image).astype(np.uint8))
 
         return Image.fromarray(stego.astype(np.uint8))
@@ -287,12 +354,12 @@ class TrustMark():
     def remove_watermark(self, stego):
         """Remove watermark from stego image"""
         W, H = stego.size
-        stego256 = stego.resize((256,256), Image.BILINEAR)
-        stego256 = transforms.ToTensor()(stego256).unsqueeze(0).to(self.removal.device) * 2.0 - 1.0 # (1,3,256,256) in range [-1, 1]
+        stego256 = stego.resize((self.model_resolution_remove,self.model_resolution_remove), Image.BILINEAR)
+        stego256 = transforms.ToTensor()(stego256).unsqueeze(0).to(self.removal.device) * 2.0 - 1.0 # (1,3,modelres,modelres) in range [-1, 1]
         img256 = self.removal(stego256).clamp(-1, 1)
         res = img256 - stego256
         res = torch.nn.functional.interpolate(res, (H,W), mode='bilinear').permute(0,2,3,1).cpu().numpy()   # (B,3,H,W) no need antialias since this op is mostly upsampling
-        out = np.clip(res[0] + np.asarray(stego)/127.5-1., -1, 1)*127.5+127.5  # (256, 256, 3), ndarray, uint8
+        out = np.clip(res[0] + np.asarray(stego)/127.5-1., -1, 1)*127.5+127.5  # (modelres, modelres, 3), ndarray, uint8
         return Image.fromarray(out.astype(np.uint8))
 
 
