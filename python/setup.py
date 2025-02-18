@@ -30,8 +30,7 @@ setup(name='trustmark',
                       'torchvision>=0.16.2',
                       'lightning>=2.0',
                       'six>=1.9',
-                      'einops>=0.4.0',
-                      'kornia>=0.7.0'
+                      'einops>=0.4.0'
                       ],
 
     classifiers=[

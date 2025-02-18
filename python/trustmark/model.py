@@ -14,7 +14,6 @@ try:
 except ImportError:
     import pytorch_lightning as pl
 import einops
-import kornia
 import numpy as np
 import torchvision
 import importlib
@@ -80,11 +79,7 @@ class TrustMark_Arch(pl.LightningModule):
         self.register_buffer("fixed_input", torch.tensor(True))
         self.register_buffer("update_gen", torch.tensor(False))  # update generator to fool discriminator
         self.bit_acc_thresholds = bit_acc_thresholds
-        if noise_config == '__none__' or noise_config.target == 'cldm.transformations.TransformNet':  # no noise or imagenetc
-            print('Noise model from transformations.py (ImagenetC)')
-            self.crop = Identity()
-        else:
-            self.crop = kornia.augmentation.CenterCrop((224, 224), cropping_mode="resample")  # early training phase
+        self.crop = Identity()
     
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]

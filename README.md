@@ -26,7 +26,7 @@ Install from [PyPi](https://pypi.org/project/trustmark/) directly `pip install t
 
 Or within the `python/` folder run `pip install .` 
 
-The `python/test.py` script provides examples of watermarking images (a JPEG photo, a JPEG GenAI image, and a transparent PNG image are provided as examples).  To test the installation the following code snippet in Python shows typical usage:
+The `python/test.py` script provides examples of watermarking images (a JPEG photo, a JPEG GenAI image, and an RGBA PNG image are provided as examples).  To test the installation the following code snippet in Python shows typical usage:
 
 ```python
 from trustmark import TrustMark

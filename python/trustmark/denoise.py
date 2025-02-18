@@ -14,7 +14,6 @@ try:
 except ImportError:
     import pytorch_lightning as pl
 import einops
-import kornia
 import numpy as np
 import torchvision
 import importlib
