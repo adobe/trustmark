@@ -31,7 +31,7 @@ MODEL_REMOTE_HOST = "https://cc-assets.netlify.app/watermarking/trustmark-models
 MODEL_CHECKSUMS=dict()
 
 # C variant is a compact version of TrustMark, using a ResNet-18 decoder
-# This is convenient for resource constrained deployments but lowers the PSNR to 38-39 typical
+# This is convenient for resource constrained deployments but lowers the PSNR to 39 typical
 MODEL_CHECKSUMS['trustmark_C.yaml']="4ee4a79c091f9263c949bd0cb590eb74"
 MODEL_CHECKSUMS['decoder_C.ckpt']="ab3fa5678a86c006bb162e5cc90501d3"
 MODEL_CHECKSUMS['encoder_C.ckpt']="c22bd5f675ee2cf2a6b18f3c2cbcc507"
@@ -55,12 +55,12 @@ MODEL_CHECKSUMS['trustmark_rm_B.yaml']="0952cd4de245c852840f22d096946db8"
 MODEL_CHECKSUMS['trustmark_rm_B.ckpt']="eb4279e0301973112b021b1440363401"
 
 # P variant is trained with higher weight on perceptual loss over diverse data and is the highest visual
-# quality variant of TrustMark whilst still retaining good robustness, PSNR typically 46-48
+# quality variant of TrustMark whilst still retaining good robustness, PSNR typically 48
 MODEL_CHECKSUMS['trustmark_P.yaml']="fe40df84a7feeebfceb7a7678d7e6ec6"
 MODEL_CHECKSUMS['decoder_P.ckpt']="9450972bc0c3c217cb7b8220dd2f7a3c"
 MODEL_CHECKSUMS['encoder_P.ckpt']="0a18f6de6d57c6ef7dda30ce6154a775"
-MODEL_CHECKSUMS['trustmark_rm_P.yaml']="8476bcd4092abf302272868f3b4c2e38"
-MODEL_CHECKSUMS['trustmark_rm_P.ckpt']="760337a5596e665aed2ab5c49aa5284f"
+MODEL_CHECKSUMS['trustmark_rm_P.yaml']="654cabd3ac8339397fbc611ca7464780"
+MODEL_CHECKSUMS['trustmark_rm_P.ckpt']="8b8f4715ea474327921ee9d0f46d2c3f"
 
 
 CONCENTRATE_WM_REGION = 1.0
@@ -419,16 +419,20 @@ class TrustMark():
         return Image.fromarray(stego.astype(np.uint8))
 
     @torch.no_grad()
-    def remove_watermark(self, stego):
+    def remove_watermark(self, in_cover_image, WM_STRENGTH=1.0, WM_MERGE='bilinear'):
         """Remove watermark from stego image"""
+        stego = self.get_the_image_for_processing(in_cover_image)
         W, H = stego.size
+        if self.model_type == 'P':
+            WM_STRENGTH = WM_STRENGTH * 1.25
         stego256 = stego.resize((self.model_resolution_remove,self.model_resolution_remove), Image.BILINEAR)
         stego256 = transforms.ToTensor()(stego256).unsqueeze(0).to(self.removal.device) * 2.0 - 1.0 # (1,3,modelres,modelres) in range [-1, 1]
         img256 = self.removal(stego256).clamp(-1, 1)
         res = img256 - stego256
-        res = torch.nn.functional.interpolate(res, (H,W), mode='bilinear').permute(0,2,3,1).cpu().numpy()   # (B,3,H,W) no need antialias since this op is mostly upsampling
-        out = np.clip(res[0] + np.asarray(stego)/127.5-1., -1, 1)*127.5+127.5  # (modelres, modelres, 3), ndarray, uint8
-        return Image.fromarray(out.astype(np.uint8))
+        res = torch.nn.functional.interpolate(res, (H,W), mode=WM_MERGE).permute(0,2,3,1).cpu().numpy()   # (B,3,H,W) no need antialias since this op is mostly upsampling
+        out = np.clip(res[0]*WM_STRENGTH + np.asarray(stego)/127.5-1., -1, 1)*127.5+127.5  # (modelres, modelres, 3), ndarray, uint8
+        stego = self.put_the_image_after_processing(out, np.asarray(in_cover_image).astype(np.uint8))
+        return Image.fromarray(stego.astype(np.uint8))
 
 
 
