@@ -115,7 +115,6 @@ No, TrustMark is an open and transparent technology designed for ethical use in 
 No, the goal of steganography ('hidden writing') is to secretly embed a message in an image.  Unlike watermarking algorithms that require a secret key to detect or to extract the watermarked identifier, TrustMark is an open technology that anyone can apply to detect or decode a watermark.  Thus TrustMark is an example of non-steganographic watermarking.  We take the non-steganographic approach as, for the media provenance use case, it is desirable for anyone to read the watermark to determine the origin of an image.
 
 ### Why release removal code?
-
 TrustMark is developed as an open technology, that helps enhance the durability of open metadata standards for media provenance such as Content Credentials (C2PA).  This is achieved by using the TrustMark watermark to lookup metadata that may go missing during content distribution.  It is sometimes desirable to update watermarks as content is modified or otherwise passes down the creative supply chain.  For such replacement, we show in the paper that it is better to remove and reapply TrustMark that blindly overwrite it, for quality (PSNR) purposes.
 
 C2PA is opt-in, and enables good actors to add value to content by attesting to its authenticity via provenance information.  The absence of provenance data does not directly carry any trust signal, though may imply one if usually present in an actor’s published content.  Much as metadata can be stripped, so can invisible watermarks (though various image processing means), and releasing code to do so does not change this functionality or threat calculus.
@@ -124,11 +123,9 @@ C2PA is opt-in, and enables good actors to add value to content by attesting to 
 No, TrustMark is designed to be visually imperceptible and should not interfere with computer vision tasks.
 
 ### Can TrustMark be used to detect image manipulation?
-
 Not directly, however this is possible when TrustMark is used to retrieve image provenance metadata such as Content Credentials ([C2PA](https://c2pa.org/)).  This metadata commonly contains an image thumbnail that may be visually compared to the watermark-bearing images to spot any manipulations.  It is possible to automate this comparison using an image fingerprint (perceptual hash).
 
 ### Can TrustMark be transferred from one image to another?
-
 Not directly, however this software may be used to decode the watermark from one image and encode it in another.  In scenarios were TrustMark is used to retrieve image provenance metadata such as Content Credentials ([C2PA](https://c2pa.org/)), we recommend that a check be made to verify that the retrieved metadata matches the watermark-bearing image.  This is commonly achieved using a digital fingerprint (perceptual hash) stored within the metadata, that is compared against a similarly computed hash of the watermark-bearing image.  Please see this [IEEE technical paper for detail](https://personalpages.surrey.ac.uk/j.collomosse/pubs/Collomosse-IEEECGA-2024.pdf).
 
 ### What stops someone from spoofing a TrustMark?
@@ -139,9 +136,9 @@ While an attacker could generate a fake TrustMark identifier, the strength of Tr
 ## Future Developments
 
 ### Will TrustMark support other media types like video?
-TrustMark is currently designed only for still images.  It could be applied to animated GIF, video etc. by watermarking every frame but is not designed for this purpose.
+TrustMark is currently designed for images, with other media types being considered.
 
-### Are there plans to make TrustMark compatible with blockchain technology?
+### Is TrustMark compatible with blockchain technology?
 TrustMark can be used as a key for looking up provenance information stored in decentralized databases, including blockchain-based registries. Some implementors have harnessed TrustMark for this purpose.
 
 ### Can TrustMark be used for NFT provenance?
