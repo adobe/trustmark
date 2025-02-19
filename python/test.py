@@ -13,12 +13,12 @@ import math,random
 import numpy as np
 
 
-EXAMPLE_FILE = '../images/ufo_240.jpg'     # JPEG example
-#EXAMPLE_FILE = '../images/ripley.jpg'     # JPEG example
+#EXAMPLE_FILE = '../images/ufo_240.jpg'     # JPEG example
+EXAMPLE_FILE = '../images/ripley.jpg'     # JPEG example
 #EXAMPLE_FILE = '../images/bfly_rgba.png'   # Transparent PNG example
 
 # Available modes: Q=balance, P=high visual quality, C=compact decoder, B=base from paper
-MODE='Q'
+MODE='P'
 tm=TrustMark(verbose=True, model_type=MODE, encoding_type=TrustMark.Encoding.BCH_5)
 
 # encoding example
