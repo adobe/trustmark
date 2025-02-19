@@ -18,7 +18,7 @@ This document outlines the main parameters for configuring TrustMark to tune the
 
 In general, we recommend using **P** or **Q**:
 - **P** is useful for creative applications where very high visual quality is required.  
-- **Q** is a good all-rounder and is the default.  It can occasionally be perceived in very flat images as ripple effect.
+- **Q** is a good all-rounder and is the default.
 
 > **Note:** Images encoded with one model variant cannot be decoded with another.
 
@@ -27,7 +27,7 @@ In general, we recommend using **P** or **Q**:
 | **Q**   | 43-45        | 17/45                  | Default (**Q**uality). Good trade-off between robustness and imperceptibility. Uses ResNet-50 decoder. |
 | **B**   | 43-45        | 17/45                  | (**B**eta). Very similar to Q, included mainly for reproducing the paper. Uses ResNet-50 decoder.   |
 | **C**   | 38-39        | 17/21                  | (**C**ompact). Uses a ResNet-18 decoder (smaller model size). Slightly lower visual quality.        |
-| **P**   | 46-48        | 16/45                  | (**P**erceptual). Very high visual quality and good robustness.  ResNet-50 decoder trained with much higher weight on perceptual loss (see paper).   |
+| **P**   | 48-50        | 16/45                  | (**P**erceptual). Very high visual quality and good robustness.  ResNet-50 decoder trained with much higher weight on perceptual loss (see paper).   |
 
 ---
 
@@ -35,22 +35,13 @@ In general, we recommend using **P** or **Q**:
 
 An optional parameter `WM_STRENGTH` (default `1.0`) can be provided when encoding. Strength enables a trade-off between **robustness** and **visibility**.
 
-- **Raising `WM_STRENGTH`** (e.g., to `1.5`) improves robustness (e.g., survives printing) but increases the likelihood of slight artifacts.  
+- **Raising `WM_STRENGTH`** (e.g., to `1.5`) improves robustness (e.g., survives printing) but increases the likelihood of ripple artifacts.  
 - **Lowering `WM_STRENGTH`** (e.g., to `0.8`) reduces any potential artifacts further but  compromises on robustness (still survives lower noise, screenshotting, or social media).
 
 ```python
 # Example usage:
 encoded_image = tm.encode(input_image, payload="example", WM_STRENGTH=1.5)
 ```
-
-### Examples:
-
-**Physical/print watermarking.**  
-Setting `WM_STRENGTH` to ~`1.5` (150%) helps the watermark survive printing. For instance, MAX Sneak 2024 "Project KnowHow" used the Q variant at 150% strength with `BCH_SUPER` to read watermarks off mugs, tote bags and posters.
-
-**Reduced visibility.**  
-- Drop `WM_STRENGTH` to around `0.8` if artifacts need to be minimized further.  
-- Use variant **P** in artifact-sensitive use cases for even higher visual quality.
 
 ## Error Correction Level
 
