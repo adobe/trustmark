@@ -36,11 +36,11 @@ from PIL import Image
 tm=TrustMark(verbose=True, model_type='Q') # or try P
 
 # encoding example
-cover = Image.open('ufo_240.jpg').convert('RGB')
+cover = Image.open('images/ufo_240.jpg').convert('RGB')
 tm.encode(cover, 'mysecret').save('ufo_240_Q.png')
 
 # decoding example
-cover = Image.open('ufo_240_Q.png').convert('RGB')
+cover = Image.open('images/ufo_240_Q.png').convert('RGB')
 wm_secret, wm_present, wm_schema = tm.decode(cover)
 
 if wm_present:
@@ -49,9 +49,9 @@ else:
    print('No watermark detected')
 
 # removal example
-stego = Image.open('ufo_240_Q.png').convert('RGB')
+stego = Image.open('images/ufo_240_Q.png').convert('RGB')
 im_recover = tm.remove_watermark(stego)
-im_recover.save('recovered.png')
+im_recover.save('images/recovered.png')
 ```
 In this example, TrustMark variant Q is being used to encode the word `mysecret` in ASCII7 encoding into the image `ufo_240.jpg` which is then decoded, and then removed from the image.
 

@@ -13,8 +13,9 @@ import math,random
 import numpy as np
 
 
-#EXAMPLE_FILE = 'ufo_240.jpg'     # JPEG example
-EXAMPLE_FILE = 'bfly_rgba.png'   # Transparent PNG example
+EXAMPLE_FILE = '../images/ufo_240.jpg'     # JPEG example
+#EXAMPLE_FILE = '../images/ripley.jpg'     # JPEG example
+#EXAMPLE_FILE = '../images/bfly_rgba.png'   # Transparent PNG example
 
 # Available modes: C=compact, Q=quality, B=base
 MODE='Q'
@@ -53,11 +54,18 @@ if mse > 0:
   print('PSNR = %f' % psnr)
 
 # removal
-stego = Image.open(outfile).convert('RGB')
-im_recover = tm.remove_watermark(stego)
-im_recover.save('recovered.png', exif=stego.info.get('exif'), icc_profile=stego.info.get('icc_profile'), dpi=stego.info.get('dpi'))
+stego = Image.open(outfile)
+rgb=stego.convert('RGB')
+has_alpha=stego.mode== 'RGBA'
+if (has_alpha):
+  alpha=stego.split()[-1]
+im_recover = tm.remove_watermark(rgb)
 wm_secret, wm_present, wm_schema = tm.decode(im_recover)
 if wm_present:
   print(f'Extracted secret: {wm_secret} (schema {wm_schema})')
 else:
    print('No secret after removal')
+if (has_alpha):
+  im_recover.putalpha(alpha)
+im_recover.save('recovered.png', exif=stego.info.get('exif'), icc_profile=stego.info.get('icc_profile'), dpi=stego.info.get('dpi'))
+
