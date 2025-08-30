@@ -65,6 +65,8 @@ impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
 
     fn try_from(ModelImage(size, variant, img): ModelImage) -> Result<Self, Self::Error> {
         let (w, h, xpos, ypos) = center_crop_size_and_offset(variant, &img);
+        
+
 
         let options = ResizeOptions::new()
             .crop(xpos as f64, ypos as f64, w as f64, h as f64)
@@ -72,6 +74,8 @@ impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
                 fast_image_resize::FilterType::Bilinear,
             ));
         let modified_img = resize_img(&img, size, size, options)?;
+        
+
 
         let img = modified_img.into_rgb32f().into_vec();
         let array = Array::from(img);
@@ -84,6 +88,9 @@ impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
             .insert_axis(Axis(3))
             .reversed_axes();
         array.swap_axes(2, 3);
+        
+
+        
         assert_eq!(array.shape(), &[1, 3, size as usize, size as usize]);
         Ok(ort::Value::from_array(&array)?)
     }
@@ -164,6 +171,8 @@ pub(super) fn apply_residual(input: DynamicImage, residual: DynamicImage) -> Dyn
 /// the shorter side out of the center of the image for the model.
 fn center_crop_size_and_offset(variant: Variant, img: &DynamicImage) -> (u32, u32, u32, u32) {
     let (width, height) = img.dimensions();
+    
+
 
     if height > width * 2 || width > height * 2 || variant == Variant::P {
         let m = cmp::min(height, width);
@@ -178,9 +187,11 @@ fn center_crop_size_and_offset(variant: Variant, img: &DynamicImage) -> (u32, u3
             ypos = 0;
             xpos = offset;
         }
+        
 
         (m, m, xpos, ypos)
     } else {
+
         (width, height, 0, 0)
     }
 }
