@@ -14,7 +14,7 @@ const VERSION_BITS: u16 = 4;
 
 mod bch;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct Bits(String);
 
 /// Error type for the `bits` module.

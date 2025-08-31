@@ -20,7 +20,8 @@ int main(int argc, char* argv[]) {
         }
 
         std::string inputImagePath = argv[1];
-        std::string secretMessage = (argc > 2) ? argv[2] : "1011011110011000111111000000011111011111011100000110110110111";
+        // Use the fully-encoded 100-bit string (data+ECC+version) to validate pipeline
+        std::string secretMessage = (argc > 2) ? argv[2] : "0110111100000110010111010000100000011110000000100100111000010110100011110111101110011010010011010001";
 
         std::cout << "Input image: " << inputImagePath << std::endl;
         std::cout << "Secret bitstring: " << secretMessage << std::endl;
@@ -60,7 +61,9 @@ int main(int argc, char* argv[]) {
 
         // Save the actual watermarked image from the encoder
         std::string outputPath = "../output/watermarked_" + std::to_string(time(nullptr)) + ".jpg";
-        if (cv::imwrite(outputPath, watermarkedImage)) {
+        std::vector<int> params; params.push_back(cv::IMWRITE_JPEG_QUALITY); params.push_back(90);
+        cv::Mat bgr; cv::cvtColor(watermarkedImage, bgr, cv::COLOR_RGB2BGR);
+        if (cv::imwrite(outputPath, bgr, params)) {
             std::cout << "Watermarked image saved as: " << outputPath << std::endl;
         } else {
             std::cerr << "Warning: Could not save watermarked image" << std::endl;
