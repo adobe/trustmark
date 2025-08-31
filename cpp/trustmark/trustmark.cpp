@@ -37,7 +37,7 @@ TrustMark::TrustMark(bool useECC, bool verbose, int secretLen,
     // Set model-specific parameters
     if (modelType == "P") {
         modelResolutionEnc_ = 256;
-        modelResolutionDec_ = 256;
+        modelResolutionDec_ = 224; // P variant decodes at 224 like Rust
         aspectRatioLim_ = 0.0f; // Force center square crop
         strengthMultiplier_ = 1.25f; // P variant specific strength multiplier
     } else {
@@ -497,7 +497,7 @@ std::tuple<std::string, bool, int> TrustMark::decode(const cv::Mat& stegoImage, 
             return {"", false, -1};
         }
 
-        // Extract secret bits
+        // Extract secret bits (expect shape [1,100])
         std::vector<float> secretOutput = onnx_utils::extractOutputTensor(outputs[0]);
 
         // Debug: Print raw decoder output
@@ -520,21 +520,38 @@ std::tuple<std::string, bool, int> TrustMark::decode(const cv::Mat& stegoImage, 
             std::cout << std::endl;
         }
 
-        // Convert to binary array
+        // Convert to binary array and also build string for version parsing
         std::vector<bool> secretBinaryArray;
+        secretBinaryArray.reserve(secretOutput.size());
+        std::string secretBitsStr; secretBitsStr.reserve(secretOutput.size());
         for (float val : secretOutput) {
-            secretBinaryArray.push_back(val > 0.0f);
+            bool bit = (val > 0.0f);
+            secretBinaryArray.push_back(bit);
+            secretBitsStr.push_back(bit ? '1' : '0');
         }
 
         // Decode secret
+        // Determine version from last 4 bits and return only data bits (match Rust behavior)
+        auto getDataBitsForVersion = [](const std::string& versionBits) -> int {
+            if (versionBits == "0000") return 40; // BCH_SUPER
+            if (versionBits == "0001") return 61; // BCH_5
+            if (versionBits == "0010") return 68; // BCH_4
+            if (versionBits == "0011") return 75; // BCH_3
+            // Fallback: assume BCH_5
+            return 61;
+        };
+
+        int totalBits = static_cast<int>(secretBitsStr.size());
+        std::string versionBits = totalBits >= 4 ? secretBitsStr.substr(totalBits - 4) : std::string("0001");
+        int dataBits = getDataBitsForVersion(versionBits);
+        dataBits = std::min(dataBits, static_cast<int>(secretBitsStr.size()));
+        std::string dataOnly = secretBitsStr.substr(0, dataBits);
+
         if (useECC_) {
-            // Use BCH decoding (simplified)
-            std::string secret = utils::decodeText(secretBinaryArray);
-            return {secret, true, 0};
+            // If/when full BCH is implemented, apply correction here.
+            return {dataOnly, true, 0};
         } else {
-            // Direct binary decoding
-            std::string secret = utils::decodeBinary(secretBinaryArray);
-            return {secret, true, -1};
+            return {dataOnly, true, -1};
         }
 
     } catch (const std::exception& e) {

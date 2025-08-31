@@ -2,45 +2,10 @@
 
 A C++ implementation of the TrustMark watermarking system using ONNX Runtime for efficient inference.
 
-## Overview
-
-TrustMark is a state-of-the-art digital watermarking system that embeds invisible watermarks into images while maintaining high visual quality. This C++ implementation provides:
-
-- **High Performance**: Optimized C++ code with ONNX Runtime for fast inference
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Easy Integration**: Simple C++ API for embedding and extracting watermarks
-- **Multiple Variants**: Support for C, Q, B, and P model variants
-- **Error Correction**: Built-in BCH error correction for robust watermarking
-
-## Features
-
-- **Watermark Encoding**: Embed text or binary data into images
-- **Watermark Decoding**: Extract hidden messages from watermarked images
-- **Watermark Removal**: Remove watermarks while preserving image quality
-- **Multiple Model Types**: Choose from different quality/robustness trade-offs
-- **Error Correction**: BCH error correction for reliable message recovery
-- **Image Processing**: Advanced image preprocessing and postprocessing
-- **Performance Optimized**: Efficient tensor operations with ONNX Runtime
-
-## Model Variants
-
-| Variant | Description | PSNR | Use Case |
-|---------|-------------|------|----------|
-| C | Compact version with ResNet-18 decoder | ~39 dB | Resource-constrained deployments |
-| Q | Quality-focused variant (default) | ~43 dB | General purpose, good balance |
-| B | Balanced variant | ~43 dB | Original paper reproduction |
-| P | Perceptual quality variant | ~48 dB | Highest visual quality |
-
 ## Requirements
 
-### System Requirements
-- **OS**: Windows 10+, macOS 10.14+, or Linux (Ubuntu 18.04+)
-- **Compiler**: C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- **Memory**: 4GB RAM minimum, 8GB recommended
-- **Storage**: 500MB for models and dependencies
-
 ### Dependencies
-- **ONNX Runtime**: 1.15.0 or later
+- **ONNX Runtime**: exactly 1.19.2 (staged locally under `cpp/third_party/ort`)
 - **OpenCV**: 4.5.0 or later
 - **CMake**: 3.16 or later
 
@@ -48,17 +13,13 @@ TrustMark is a state-of-the-art digital watermarking system that embeds invisibl
 
 ### Prerequisites
 
-1. **Install ONNX Runtime**:
+1. **Install ONNX Runtime locally (no system install)**:
    ```bash
-   # Ubuntu/Debian
-   sudo apt-get install libonnxruntime-dev
-   
-   # macOS
-   brew install onnxruntime
-   
-   # Windows
-   # Download from https://github.com/microsoft/onnxruntime/releases
+   # From repo root or within cpp/
+   bash cpp/fetch_ort.sh 1.19.2
    ```
+
+   This stages headers and libraries under `cpp/third_party/ort` for isolated linking.
 
 2. **Install OpenCV**:
    ```bash
@@ -117,16 +78,13 @@ TrustMark is a state-of-the-art digital watermarking system that embeds invisibl
    cmake --build . --target install --config Release  # Windows
    ```
 
-### Building with Custom Dependencies
-
-If you have custom ONNX Runtime or OpenCV installations:
-
-```bash
-cmake .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DONNXRuntime_DIR=/path/to/onnxruntime/cmake \
-  -DOpenCV_DIR=/path/to/opencv/cmake
-```
+6. **Place models in the models/ directory**:
+    Use the rust xtask `cargo xtask fetch-models` and copy the files from `../rust/models`
+   ```
+   models/
+   ├── encoder_Q.onnx
+   ├── decoder_Q.onnx
+   ```
 
 ## Usage
 
@@ -272,129 +230,3 @@ enum class Mode {
     BINARY = 1       // Binary data mode
 };
 ```
-
-## Model Conversion
-
-To use your own PyTorch models with this C++ library:
-
-1. **Export to ONNX**:
-   ```python
-   import torch
-   from trustmark import TrustMark
-   
-   # Load your trained model
-   model = TrustMark.load_from_checkpoint("path/to/checkpoint.ckpt")
-   
-   # Export encoder
-   dummy_image = torch.randn(1, 3, 256, 256)
-   dummy_secret = torch.randn(1, 100)
-   torch.onnx.export(model.encoder, 
-                     (dummy_image, dummy_secret),
-                     "encoder_Q.onnx",
-                     input_names=["cover", "secret"],
-                     output_names=["stego"],
-                     dynamic_axes={"cover": {0: "batch_size"},
-                                 "secret": {0: "batch_size"},
-                                 "stego": {0: "batch_size"}})
-   
-   # Export decoder and removal models similarly
-   ```
-
-2. **Place models in the models/ directory**:
-   ```
-   models/
-   ├── encoder_Q.onnx
-   ├── decoder_Q.onnx
-   └── removal_Q.onnx
-   ```
-
-## Performance
-
-### Benchmarks
-
-| Model Variant | Encode Time | Decode Time | Memory Usage |
-|---------------|-------------|-------------|--------------|
-| C (Compact)   | ~50ms       | ~30ms       | ~200MB       |
-| Q (Quality)   | ~80ms       | ~50ms       | ~300MB       |
-| B (Balanced)  | ~80ms       | ~50ms       | ~300MB       |
-| P (Perceptual)| ~100ms      | ~60ms       | ~400MB       |
-
-*Benchmarks on Intel i7-10700K, 32GB RAM, NVIDIA RTX 3080*
-
-### Optimization Tips
-
-1. **Use appropriate model variant** for your use case
-2. **Batch processing** multiple images when possible
-3. **Enable OpenMP** for multi-threaded operations
-4. **Use GPU acceleration** if available (requires ONNX Runtime GPU build)
-
-## Error Handling
-
-The library provides comprehensive error handling:
-
-```cpp
-// Check for errors after operations
-if (!trustmark.getLastError().empty()) {
-    std::cerr << "Error: " << trustmark.getLastError() << std::endl;
-    trustmark.clearLastError();
-}
-
-// Exception handling
-try {
-    auto result = trustmark.encode(image, message);
-} catch (const std::exception& e) {
-    std::cerr << "Exception: " << e.what() << std::endl;
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Model loading fails**:
-   - Check model file paths
-   - Verify ONNX file integrity
-   - Ensure sufficient memory
-
-2. **Build errors**:
-   - Verify C++17 support
-   - Check dependency versions
-   - Ensure proper CMake configuration
-
-3. **Runtime errors**:
-   - Check input image format
-   - Verify message length limits
-   - Monitor memory usage
-
-### Debug Mode
-
-Build with debug information:
-```bash
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-make VERBOSE=1
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the Adobe License Agreement. See the LICENSE file for details.
-
-## Support
-
-- **Issues**: GitHub Issues
-- **Documentation**: This README and inline code comments
-- **Community**: Adobe TrustMark discussions
-
-## Acknowledgments
-
-- Original TrustMark research team
-- ONNX Runtime contributors
-- OpenCV community
-- C++ standards committee

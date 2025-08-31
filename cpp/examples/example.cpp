@@ -79,6 +79,16 @@ int main(int argc, char* argv[]) {
             std::cout << "Watermarked PNG saved as: " << outputPng << std::endl;
         }
 
+        // Run C++ decoder on both outputs to validate end-to-end
+        std::cout << "\nDecoding via C++..." << std::endl;
+        TrustMark::TrustMark tmDec(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f);
+        cv::Mat jpg = cv::imread(outputPath, cv::IMREAD_COLOR);
+        cv::Mat png = cv::imread(outputPng, cv::IMREAD_COLOR);
+        auto [bitsJpg, okJpg, vJpg] = tmDec.decode(jpg, TrustMark::Mode::BINARY);
+        auto [bitsPng, okPng, vPng] = tmDec.decode(png, TrustMark::Mode::BINARY);
+        std::cout << "Decoded JPG (ok=" << okJpg << "): " << bitsJpg << std::endl;
+        std::cout << "Decoded PNG (ok=" << okPng << "): " << bitsPng << std::endl;
+
         std::cout << "\nExample completed successfully!" << std::endl;
         return 0;
 

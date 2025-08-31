@@ -148,19 +148,22 @@ cv::Mat ImageProcessor::preprocessForEncoder(const cv::Mat& image, int targetSiz
 // Preprocess for decoder
 cv::Mat ImageProcessor::preprocessForDecoder(const cv::Mat& image, int targetSize) {
     try {
-        // Ensure image is in BGR format
+        // Convert to RGB to match model training
         cv::Mat processedImage = image;
         if (image.channels() == 1) {
-            cv::cvtColor(image, processedImage, cv::COLOR_GRAY2BGR);
+            cv::cvtColor(image, processedImage, cv::COLOR_GRAY2RGB);
+        } else if (image.channels() == 3) {
+            cv::cvtColor(image, processedImage, cv::COLOR_BGR2RGB);
         } else if (image.channels() == 4) {
-            cv::cvtColor(image, processedImage, cv::COLOR_BGRA2BGR);
+            cv::cvtColor(image, processedImage, cv::COLOR_BGRA2RGB);
         }
 
-        // Resize to target size
+        // For P variant, decode size is 224. We rely on caller passing targetSize accordingly
         cv::Mat resizedImage = resizeImage(processedImage, targetSize, targetSize, "bilinear");
 
-        // Normalize to [0, 1] range
-        cv::Mat normalizedImage = normalizeImage(resizedImage, 0.0f, 1.0f);
+        // Normalize to [0,1] then map to [-1,1]
+        cv::Mat floatImage; resizedImage.convertTo(floatImage, CV_32F, 1.0/255.0);
+        cv::Mat normalizedImage = floatImage * 2.0f - 1.0f;
 
         return normalizedImage;
 
