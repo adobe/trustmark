@@ -5,8 +5,8 @@ project(TrustMarkCpp VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find ONNX Runtime
-find_package(onnxruntime REQUIRED)
+# Find ONNX Runtime (avoid schema conflicts by not using find_package)
+# Instead, manually specify the paths to avoid ONNX library conflicts
 
 # Find OpenCV for image processing
 find_package(OpenCV REQUIRED)
@@ -14,7 +14,7 @@ find_package(OpenCV REQUIRED)
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/trustmark)
 include_directories(${OpenCV_INCLUDE_DIRS})
-include_directories(/opt/homebrew/Cellar/onnxruntime/1.22.2_2/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/include)
 
 # Create the library
 add_library(trustmark_cpp
@@ -26,7 +26,7 @@ add_library(trustmark_cpp
 
 # Link libraries
 target_link_libraries(trustmark_cpp
-    onnxruntime::onnxruntime
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib/libonnxruntime.dylib
     ${OpenCV_LIBS}
 )
 
@@ -85,3 +85,26 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/TrustMarkCppConfigVersion.cmake"
     DESTINATION lib/cmake/TrustMarkCpp
 )
+# Link against local libonnxruntime
+set(ORT_LIB ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib/libonnxruntime.dylib)
+if(NOT EXISTS ${ORT_LIB})
+  message(FATAL_ERROR "libonnxruntime not found at ${ORT_LIB}")
+endif()
+
+# Ensure rpath includes our third_party lib
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH "@loader_path/../third_party/ort/lib;@loader_path/../lib")
+set(CMAKE_BUILD_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib")
+
+# Link
+set(ADDITIONAL_LIBS ${ORT_LIB})
+
+# Apply to our target
+# Replace previous target_link_libraries call
+
+# Link libraries
+ target_link_libraries(trustmark_cpp
+     ${ADDITIONAL_LIBS}
+     ${OpenCV_LIBS}
+ )

@@ -114,6 +114,11 @@ impl Bits {
         s
     }
 
+    /// Return full 100-bit encoded string (data + ecc + version bits).
+    pub(super) fn into_string(self) -> String {
+        self.0
+    }
+
     /// Get the version from the bits.
     pub(super) fn get_version(&self) -> Version {
         match &self.0[98..100] {

@@ -66,32 +66,6 @@ int main(int argc, char* argv[]) {
             std::cerr << "Warning: Could not save watermarked image" << std::endl;
         }
 
-        // Decode watermark
-        std::cout << "\nDecoding watermark..." << std::endl;
-        auto decodeResult = trustmark.decode(watermarkedImage, TrustMark::Mode::BINARY);
-
-        std::string decodedMessage = std::get<0>(decodeResult);
-        bool decodeSuccess = std::get<1>(decodeResult);
-        int version = std::get<2>(decodeResult);
-
-        if (decodeSuccess) {
-            std::cout << "Watermark decoded successfully!" << std::endl;
-            std::cout << "Decoded message: " << decodedMessage << std::endl;
-            std::cout << "Version: " << version << std::endl;
-
-            // Check if decoded message matches original
-            if (decodedMessage == secretMessage) {
-                std::cout << "✓ Bitstring matches perfectly!" << std::endl;
-            } else {
-                std::cout << "✗ Bitstring mismatch. Original: \"" << secretMessage
-                          << "\", Decoded: \"" << decodedMessage << "\"" << std::endl;
-            }
-        } else {
-            std::cerr << "Error decoding watermark: " << trustmark.getLastError() << std::endl;
-        }
-
-
-
         std::cout << "\nExample completed successfully!" << std::endl;
         return 0;
 
