@@ -59,18 +59,23 @@ int main(int argc, char* argv[]) {
 
         std::cout << "Watermark encoded successfully!" << std::endl;
 
-        // Save the actual watermarked image from the encoder
+        // Convert to BGR for OpenCV encoding APIs
+        cv::Mat watermarkedBGR;
+        cv::cvtColor(watermarkedImage, watermarkedBGR, cv::COLOR_RGB2BGR);
+
+        // Save JPEG (high quality)
         std::string outputPath = "../output/watermarked_" + std::to_string(time(nullptr)) + ".jpg";
-        std::vector<int> params; params.push_back(cv::IMWRITE_JPEG_QUALITY); params.push_back(90);
-        // Save RGB directly (per observation RGB is correct)
-        if (cv::imwrite(outputPath, watermarkedImage, params)) {
+        std::vector<int> params; 
+        params.push_back(cv::IMWRITE_JPEG_QUALITY); params.push_back(90);
+        params.push_back(cv::IMWRITE_JPEG_OPTIMIZE); params.push_back(1);
+        if (cv::imwrite(outputPath, watermarkedBGR, params)) {
             std::cout << "Watermarked image saved as: " << outputPath << std::endl;
         } else {
             std::cerr << "Warning: Could not save watermarked image" << std::endl;
         }
         // Also save PNG (lossless) for decoding test
         std::string outputPng = "../output/watermarked_" + std::to_string(time(nullptr)) + ".png";
-        if (cv::imwrite(outputPng, watermarkedImage)) {
+        if (cv::imwrite(outputPng, watermarkedBGR)) {
             std::cout << "Watermarked PNG saved as: " << outputPng << std::endl;
         }
 
