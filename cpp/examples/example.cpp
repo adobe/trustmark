@@ -37,8 +37,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Image loaded successfully. Size: "
                   << coverImage.cols << "x" << coverImage.rows << std::endl;
 
-        // Initialize TrustMark with P variant (newest, always center crops)
-        TrustMark::TrustMark trustmark(true, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f);
+        // Initialize TrustMark with P variant (disable ECC since we pass full 100-bit schema)
+        TrustMark::TrustMark trustmark(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f);
 
         if (!trustmark.getLastError().empty()) {
             std::cerr << "Error initializing TrustMark: " << trustmark.getLastError() << std::endl;
@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
 
         // Encode watermark
         std::cout << "\nEncoding watermark..." << std::endl;
-        cv::Mat watermarkedImage = trustmark.encode(coverImage, secretMessage, TrustMark::Mode::BINARY, 1.0f, "bilinear");
+        cv::Mat watermarkedImage = trustmark.encode(coverImage, secretMessage, TrustMark::Mode::BINARY, 0.95f, "bilinear");
 
         if (watermarkedImage.empty()) {
             std::cerr << "Error encoding watermark: " << trustmark.getLastError() << std::endl;
@@ -62,11 +62,16 @@ int main(int argc, char* argv[]) {
         // Save the actual watermarked image from the encoder
         std::string outputPath = "../output/watermarked_" + std::to_string(time(nullptr)) + ".jpg";
         std::vector<int> params; params.push_back(cv::IMWRITE_JPEG_QUALITY); params.push_back(90);
-        cv::Mat bgr; cv::cvtColor(watermarkedImage, bgr, cv::COLOR_RGB2BGR);
-        if (cv::imwrite(outputPath, bgr, params)) {
+        // Save RGB directly (per observation RGB is correct)
+        if (cv::imwrite(outputPath, watermarkedImage, params)) {
             std::cout << "Watermarked image saved as: " << outputPath << std::endl;
         } else {
             std::cerr << "Warning: Could not save watermarked image" << std::endl;
+        }
+        // Also save PNG (lossless) for decoding test
+        std::string outputPng = "../output/watermarked_" + std::to_string(time(nullptr)) + ".png";
+        if (cv::imwrite(outputPng, watermarkedImage)) {
+            std::cout << "Watermarked PNG saved as: " << outputPng << std::endl;
         }
 
         std::cout << "\nExample completed successfully!" << std::endl;

@@ -194,11 +194,24 @@ impl Trustmark {
             let dbg: ort::Value<ort::TensorValueType<f32>> =
                 ModelImage(decode_size, self.variant, img.clone()).try_into()?;
             let arr = dbg.try_extract_tensor::<f32>()?.to_owned();
+            let shape = arr.shape(); // [1,3,H,W]
             let slice = arr.as_slice().unwrap();
-            eprintln!("RUST DEC DEBUG: image tensor NCHW shape: {:?}", arr.shape());
+            eprintln!("RUST DEC DEBUG: image tensor NCHW shape: {:?}", shape);
+            let hw = (shape[2] * shape[3]) as usize;
+            let c0 = &slice[0..hw.min(slice.len())];
+            let c1 = &slice[hw..(2*hw).min(slice.len())];
+            let c2 = &slice[(2*hw)..(3*hw).min(slice.len())];
             eprintln!(
-                "RUST DEC DEBUG: image tensor first 16 vals: {}",
-                slice.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+                "RUST DEC DEBUG: C0 first 16: {}",
+                c0.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+            eprintln!(
+                "RUST DEC DEBUG: C1 first 16: {}",
+                c1.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+            eprintln!(
+                "RUST DEC DEBUG: C2 first 16: {}",
+                c2.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
             );
         }
         let img: ort::Value<ort::TensorValueType<f32>> =

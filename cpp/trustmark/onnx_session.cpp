@@ -325,18 +325,44 @@ cv::Mat extractOutputTensor(const Ort::Value& output,
         float* data = const_cast<Ort::Value&>(output).GetTensorMutableData<float>();
         auto shape = output.GetTensorTypeAndShapeInfo().GetShape();
 
-        // Calculate dimensions
+        // Expect NCHW layout from ONNX
         int batch = static_cast<int>(shape[0]);
         int channels = static_cast<int>(shape[1]);
         int height = static_cast<int>(shape[2]);
         int width = static_cast<int>(shape[3]);
 
-        // Create OpenCV Mat
+        if (batch != 1) {
+            throw std::runtime_error("Only batch=1 is supported for extraction");
+        }
+        if (channels != 3) {
+            // Still support generic channel counts by creating appropriate Mat type
+            // but downstream code expects 3 so enforce here for safety
+            // If needed, this can be generalized
+        }
+
+        // Create OpenCV Mat (HWC interleaved)
         cv::Mat outputMat(height, width, CV_32FC(channels));
 
-        // Copy data
-        size_t dataSize = height * width * channels;
-        std::memcpy(outputMat.ptr<float>(), data, dataSize * sizeof(float));
+        // Convert from CHW (NCHW) -> HWC
+        const size_t hw = static_cast<size_t>(height) * static_cast<size_t>(width);
+        for (int h = 0; h < height; ++h) {
+            for (int w = 0; w < width; ++w) {
+                if (channels == 3) {
+                    cv::Vec3f& pix = outputMat.at<cv::Vec3f>(h, w);
+                    for (int c = 0; c < 3; ++c) {
+                        size_t chwIdx = static_cast<size_t>(c) * hw + static_cast<size_t>(h) * static_cast<size_t>(width) + static_cast<size_t>(w);
+                        pix[c] = data[chwIdx];
+                    }
+                } else {
+                    // Generic path for non-3 channels
+                    float* rowPtr = outputMat.ptr<float>(h) + (w * channels);
+                    for (int c = 0; c < channels; ++c) {
+                        size_t chwIdx = static_cast<size_t>(c) * hw + static_cast<size_t>(h) * static_cast<size_t>(width) + static_cast<size_t>(w);
+                        rowPtr[c] = data[chwIdx];
+                    }
+                }
+            }
+        }
 
         return outputMat;
 

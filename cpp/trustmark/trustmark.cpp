@@ -348,45 +348,84 @@ cv::Mat TrustMark::encode(const cv::Mat& coverImage, const std::string& secret,
             cv::Scalar residualStdDev;
             cv::meanStdDev(residual, cv::noArray(), residualStdDev);
             std::cout << "Residual std dev: " << residualStdDev[0] << std::endl;
+
+            // Save raw stego (256x256, RGB) as debug to verify bits via Rust decoder
+            try {
+                cv::Mat stego01 = (stego + 1.0f) * 0.5f; // [-1,1] -> [0,1]
+                cv::Mat stegoU8; stego01.convertTo(stegoU8, CV_8UC3, 255.0);
+                std::string debugPath = "../output/debug_stego_" + std::to_string(time(nullptr)) + ".png";
+                cv::imwrite(debugPath, stegoU8);
+                std::cout << "Saved debug stego: " << debugPath << std::endl;
+            } catch (...) {}
         }
 
-        // Apply watermark strength to residual (keep in [-1,1] range)
-        residual = wmStrength * residual;
+        // Apply watermark strength multiplier (variant-specific) and clamp to [-0.2, 0.2]
+        residual = residual * (wmStrength * strengthMultiplier_);
+        cv::max(residual, cv::Scalar(-0.2f, -0.2f, -0.2f), residual);
+        cv::min(residual, cv::Scalar(0.2f, 0.2f, 0.2f), residual);
 
-        // Clamp residual to prevent artifacts (like Rust code does)
-        cv::threshold(residual, residual, -0.2f, 0.2f, cv::THRESH_TRUNC);
-        cv::threshold(residual, residual, -0.2f, 0.2f, cv::THRESH_TOZERO);
-
-        // Apply residual to normalized image (both in [-1,1] range, both 256x256)
-        cv::Mat watermarkedNormalized = normalizedImage + residual;
-
-        // Denormalize to [0,255] range
-        cv::Mat watermarkedImage = imageProcessor_->denormalizeImage(watermarkedNormalized, -1.0f, 1.0f);
-
-        // Clamp to valid range
-        cv::threshold(watermarkedImage, watermarkedImage, 0.0, 255.0, cv::THRESH_TOZERO);
-        cv::threshold(watermarkedImage, watermarkedImage, 255.0, 255.0, cv::THRESH_TRUNC);
-
-        // Debug: Print final watermarked image info
-        if (verbose_) {
-            std::cout << "Final watermarked image - size: " << watermarkedImage.cols << "x" << watermarkedImage.rows
-                      << ", channels: " << watermarkedImage.channels() << std::endl;
-            std::cout << "Watermarked image data (first 10 pixels): ";
-            for (int i = 0; i < std::min(10, watermarkedImage.cols * watermarkedImage.rows); ++i) {
-                cv::Vec3b pixel = watermarkedImage.at<cv::Vec3b>(i / watermarkedImage.cols, i % watermarkedImage.cols);
-                std::cout << "(" << (int)pixel[0] << "," << (int)pixel[1] << "," << (int)pixel[2] << ") ";
-            }
-            std::cout << std::endl;
+        // Mitigate boundary artifact: replace a small border with mean
+        const int border = 2;
+        cv::Scalar chMean = cv::mean(residual);
+        // top and bottom rows
+        if (residual.rows >= border) {
+            residual.rowRange(0, border).setTo(chMean);
+            residual.rowRange(residual.rows - border, residual.rows).setTo(chMean);
+        }
+        // left and right cols
+        if (residual.cols >= border) {
+            residual.colRange(0, border).setTo(chMean);
+            residual.colRange(residual.cols - border, residual.cols).setTo(chMean);
         }
 
-        // Resize watermarked image back to original size before blending
-        cv::Mat resizedWatermarkedImage;
-        cv::resize(watermarkedImage, resizedWatermarkedImage, coverImage.size());
+        // Build mean-padded residual canvas to match original aspect
+        int origW = coverImage.cols;
+        int origH = coverImage.rows;
+        chMean = cv::mean(residual);
+        cv::Mat meanPadded;
+        if (origW > origH) {
+            int other = static_cast<int>(std::round((static_cast<double>(origW) / origH) * 256.0));
+            meanPadded = cv::Mat(256, other, CV_32FC3, chMean);
+            int leftover = (other - 256) / 2;
+            cv::Rect roi(leftover, 0, 256, 256);
+            residual.copyTo(meanPadded(roi));
+        } else {
+            int other = static_cast<int>(std::round((static_cast<double>(origH) / origW) * 256.0));
+            meanPadded = cv::Mat(other, 256, CV_32FC3, chMean);
+            int leftover = (other - 256) / 2;
+            cv::Rect roi(0, leftover, 256, 256);
+            residual.copyTo(meanPadded(roi));
+        }
 
-        // Apply feathering and merge back to original image
-        cv::Mat finalImage = putImageAfterProcessing(resizedWatermarkedImage, coverImage);
+        // Resize mean-padded residual to original size
+        cv::Mat residualResized;
+        cv::resize(meanPadded, residualResized, coverImage.size(), 0, 0, cv::INTER_LINEAR);
 
-        return finalImage;
+        // Convert original BGR image to RGB float [0,1]
+        cv::Mat origRGB;
+        if (coverImage.channels() == 3) {
+            cv::cvtColor(coverImage, origRGB, cv::COLOR_BGR2RGB);
+        } else if (coverImage.channels() == 4) {
+            cv::cvtColor(coverImage, origRGB, cv::COLOR_BGRA2RGB);
+        } else if (coverImage.channels() == 1) {
+            cv::cvtColor(coverImage, origRGB, cv::COLOR_GRAY2RGB);
+        } else {
+            origRGB = coverImage.clone();
+        }
+        cv::Mat origFloat01;
+        origRGB.convertTo(origFloat01, CV_32FC3, 1.0 / 255.0);
+
+        // Original to [-1,1], add residual, clamp high-end at 1.0
+        cv::Mat origNeg1 = origFloat01 * 2.0f - 1.0f;
+        cv::Mat sumNeg1;
+        cv::add(origNeg1, residualResized, sumNeg1, cv::noArray(), CV_32FC3);
+        cv::min(sumNeg1, cv::Scalar(1.0f, 1.0f, 1.0f), sumNeg1);
+
+        // Back to [0,1] then to 8-bit RGB
+        cv::Mat outFloat01 = (sumNeg1 + 1.0f) * 0.5f;
+        cv::Mat outU8;
+        outFloat01.convertTo(outU8, CV_8UC3, 255.0);
+        return outU8;
 
     } catch (const std::exception& e) {
         setLastError("Encode failed: " + std::string(e.what()));
