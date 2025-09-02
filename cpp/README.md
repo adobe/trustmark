@@ -6,8 +6,8 @@ A C++ implementation of the TrustMark watermarking system using ONNX Runtime for
 
 ### Dependencies
 - **ONNX Runtime**: exactly 1.19.2 (staged locally under `cpp/third_party/ort`)
-- **OpenCV**: 4.5.0 or later
-- **CMake**: 3.16 or later
+- **OpenCV**
+- **CMake**
 
 ## Installation
 
@@ -25,10 +25,10 @@ A C++ implementation of the TrustMark watermarking system using ONNX Runtime for
    ```bash
    # Ubuntu/Debian
    sudo apt-get install libopencv-dev
-   
+
    # macOS
    brew install opencv
-   
+
    # Windows
    # Download from https://opencv.org/releases/
    ```
@@ -37,15 +37,36 @@ A C++ implementation of the TrustMark watermarking system using ONNX Runtime for
    ```bash
    # Ubuntu/Debian
    sudo apt-get install cmake
-   
+
    # macOS
    brew install cmake
-   
+
    # Windows
    # Download from https://cmake.org/download/
    ```
 
 ### Building from Source
+
+#### Option 1: Using the Build Script (Recommended)
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/adobe/trustmark.git
+   cd trustmark/cpp
+   ```
+
+2. **Run the build script**:
+   ```bash
+   bash build.sh
+   ```
+
+   This script will automatically:
+   - Create the build directory
+   - Configure CMake with Release build type
+   - Build the library (`libtrustmark_cpp.a`) and example executable (`trustmark_example`)
+   - Use optimal parallel compilation
+
+#### Option 2: Manual CMake Build
 
 1. **Clone the repository**:
    ```bash
@@ -64,27 +85,15 @@ A C++ implementation of the TrustMark watermarking system using ONNX Runtime for
    cmake .. -DCMAKE_BUILD_TYPE=Release
    ```
 
-4. **Build the library**:
+4. **Build the library and example**:
    ```bash
    make -j$(nproc)  # Linux/macOS
    # or
-   cmake --build . --config Release  # Windows
+   cmake --build . --config Release  # Cross-platform
    ```
 
-5. **Install** (optional):
-   ```bash
-   sudo make install  # Linux/macOS
-   # or
-   cmake --build . --target install --config Release  # Windows
-   ```
-
-6. **Place models in the models/ directory**:
+5. **Place models in the models/ directory**:
     Use the rust xtask `cargo xtask fetch-models` and copy the files from `../rust/models`
-   ```
-   models/
-   ├── encoder_Q.onnx
-   ├── decoder_Q.onnx
-   ```
 
 ## Usage
 
@@ -99,20 +108,20 @@ using namespace TrustMark;
 int main() {
     // Initialize TrustMark
     TrustMark trustmark(true, true, 100, "Q");
-    
+
     // Load cover image
     cv::Mat coverImage = cv::imread("input.jpg");
-    
+
     // Encode watermark
     std::string result = trustmark.encode(coverImage, "Hello, TrustMark!", Mode::TEXT);
-    
+
     // Decode watermark
     auto [message, success, version] = trustmark.decode(coverImage, Mode::TEXT);
-    
+
     if (success) {
         std::cout << "Decoded: " << message << std::endl;
     }
-    
+
     return 0;
 }
 ```
@@ -142,7 +151,7 @@ std::string result = trustmark.encode(
 // Decode with error handling
 try {
     auto [message, success, version] = trustmark.decode(stegoImage, Mode::TEXT);
-    
+
     if (success) {
         std::cout << "Message: " << message << std::endl;
         std::cout << "Version: " << version << std::endl;
@@ -157,15 +166,18 @@ try {
 ### Running the Example
 
 ```bash
-# Build the example
+# The example is built automatically with the library
+# Navigate to the build directory
 cd build
-make trustmark_example
 
-# Run with an input image
+# Run with an input image and custom message
 ./trustmark_example input.jpg "Secret message"
 
 # Run with default message
 ./trustmark_example input.jpg
+
+# Example with a test image (if available)
+./trustmark_example ../images/ripley.jpg "Hello TrustMark!"
 ```
 
 ## API Reference

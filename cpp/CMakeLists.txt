@@ -24,9 +24,27 @@ add_library(trustmark_cpp
     trustmark/bch_ecc.cpp
 )
 
+# Detect ONNX Runtime library based on platform
+if(APPLE)
+    set(ORT_LIB_EXT "dylib")
+    set(RPATH_LOADER_PATH "@loader_path")
+elseif(UNIX)
+    set(ORT_LIB_EXT "so")
+    set(RPATH_LOADER_PATH "$ORIGIN")
+elseif(WIN32)
+    set(ORT_LIB_EXT "dll")
+    set(RPATH_LOADER_PATH "$<TARGET_FILE_DIR:trustmark_cpp>")
+endif()
+
+# Find the ONNX Runtime library
+set(ORT_LIB ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib/libonnxruntime.${ORT_LIB_EXT})
+if(NOT EXISTS ${ORT_LIB})
+    message(FATAL_ERROR "libonnxruntime.${ORT_LIB_EXT} not found at ${ORT_LIB}")
+endif()
+
 # Link libraries
 target_link_libraries(trustmark_cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib/libonnxruntime.dylib
+    ${ORT_LIB}
     ${OpenCV_LIBS}
 )
 
@@ -85,26 +103,8 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/TrustMarkCppConfigVersion.cmake"
     DESTINATION lib/cmake/TrustMarkCpp
 )
-# Link against local libonnxruntime
-set(ORT_LIB ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib/libonnxruntime.dylib)
-if(NOT EXISTS ${ORT_LIB})
-  message(FATAL_ERROR "libonnxruntime not found at ${ORT_LIB}")
-endif()
-
-# Ensure rpath includes our third_party lib
+# Ensure rpath includes our third_party lib (cross-platform)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-set(CMAKE_INSTALL_RPATH "@loader_path/../third_party/ort/lib;@loader_path/../lib")
+set(CMAKE_INSTALL_RPATH "${RPATH_LOADER_PATH}/../third_party/ort/lib;${RPATH_LOADER_PATH}/../lib")
 set(CMAKE_BUILD_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ort/lib")
-
-# Link
-set(ADDITIONAL_LIBS ${ORT_LIB})
-
-# Apply to our target
-# Replace previous target_link_libraries call
-
-# Link libraries
- target_link_libraries(trustmark_cpp
-     ${ADDITIONAL_LIBS}
-     ${OpenCV_LIBS}
- )
