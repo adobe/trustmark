@@ -1,244 +1,219 @@
-# TrustMark C++ Library
+# TrustMark C++ Implementation
 
-A C++ implementation of the TrustMark watermarking system using ONNX Runtime for efficient inference.
+GPU-accelerated watermarking library using ONNX Runtime.
 
-## Requirements
+## Repository Structure
 
-### Dependencies
-- **ONNX Runtime**: exactly 1.19.2 (staged locally under `cpp/third_party/ort`)
-- **OpenCV**
-- **CMake**
+### Files to Include in Git
 
-## Installation
+```
+cpp/
+??? .gitignore              # Ignore build artifacts and dependencies
+??? README.md               # This file
+??? CMakeLists.txt          # Build configuration
+??? build.sh                # Build script
+??? fetch_ort.sh            # Script to download ONNX Runtime
+??? cmake/                  # CMake configuration files
+?   ??? TrustMarkCppConfig.cmake.in
+??? trustmark/              # Source code (INCLUDE)
+?   ??? execution_provider.h
+?   ??? onnx_session.h
+?   ??? onnx_session.cpp
+?   ??? trustmark.h
+?   ??? trustmark.cpp
+?   ??? image_processor.h
+?   ??? image_processor.cpp
+?   ??? bch_ecc.h
+?   ??? bch_ecc.cpp
+??? examples/               # Example code (INCLUDE)
+?   ??? example.cpp
+??? models/                 # ONNX models (INCLUDE if distributing)
+?   ??? .gitkeep
+?   ??? encoder_P.onnx
+?   ??? encoder_Q.onnx
+?   ??? decoder_P.onnx
+?   ??? decoder_Q.onnx
+??? output/                 # Output directory (EXCLUDE contents)
+    ??? .gitkeep            # Keep directory structure
+```
 
-### Prerequisites
+### Files to Exclude (in .gitignore)
 
-1. **Install ONNX Runtime locally (no system install)**:
-   ```bash
-   # From repo root or within cpp/
-   bash cpp/fetch_ort.sh 1.19.2
-   ```
+**Build Artifacts:**
+- `build/` - CMake build directory
+- `*.o`, `*.a`, `*.so`, `*.dylib` - Compiled binaries
+- `trustmark_example` - Compiled executable
+- `CMakeCache.txt`, `CMakeFiles/` - CMake generated files
+- `compile_commands.json` - Clang tooling database
 
-   This stages headers and libraries under `cpp/third_party/ort` for isolated linking.
+**Dependencies:**
+- `onnxruntime/` - Full ONNX Runtime source (fetch via script)
+- `third_party/ort/` - Pre-built ONNX Runtime libraries (fetch via script)
 
-2. **Install OpenCV**:
-   ```bash
-   # Ubuntu/Debian
-   sudo apt-get install libopencv-dev
+**Generated Files:**
+- `output/*.jpg`, `output/*.png` - Watermarked images (runtime output)
+- `.cache/` - IDE cache
+- `.DS_Store`, `Thumbs.db` - OS files
 
-   # macOS
-   brew install opencv
+## Quick Start
 
-   # Windows
-   # Download from https://opencv.org/releases/
-   ```
+### 1. Install Dependencies
 
-3. **Install CMake**:
-   ```bash
-   # Ubuntu/Debian
-   sudo apt-get install cmake
+```bash
+# macOS
+brew install cmake opencv
 
-   # macOS
-   brew install cmake
+# Linux
+sudo apt install cmake libopencv-dev
 
-   # Windows
-   # Download from https://cmake.org/download/
-   ```
+# Windows
+# Use vcpkg or download OpenCV manually
+```
 
-### Building from Source
+### 2. Fetch Dependencies
 
-#### Option 1: Using the Build Script (Recommended)
+```bash
+cd cpp
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/adobe/trustmark.git
-   cd trustmark/cpp
-   ```
+# Fetch ONNX Runtime library
+./fetch_ort.sh
 
-2. **Run the build script**:
-   ```bash
-   bash build.sh
-   ```
+# Fetch ONNX models (required)
+./fetch_models.sh
+# Or fetch specific variant only: ./fetch_models.sh P
+```
 
-   This script will automatically:
-   - Create the build directory
-   - Configure CMake with Release build type
-   - Build the library (`libtrustmark_cpp.a`) and example executable (`trustmark_example`)
-   - Use optimal parallel compilation
+### 3. Build
 
-#### Option 2: Manual CMake Build
+```bash
+mkdir -p build
+cd build
+cmake ..
+make -j8
+```
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/adobe/trustmark.git
-   cd trustmark/cpp
-   ```
+### 4. Run
 
-2. **Create build directory**:
-   ```bash
-   mkdir build
-   cd build
-   ```
+**With CPU:**
+```bash
+./trustmark_example /path/to/image.jpg
+```
 
-3. **Configure with CMake**:
-   ```bash
-   cmake .. -DCMAKE_BUILD_TYPE=Release
-   ```
+**With GPU (macOS with CoreML):**
+```bash
+TRUSTMARK_USE_GPU=1 ./trustmark_example /path/to/image.jpg
+```
 
-4. **Build the library and example**:
-   ```bash
-   make -j$(nproc)  # Linux/macOS
-   # or
-   cmake --build . --config Release  # Cross-platform
-   ```
+**With GPU (Linux with CUDA):**
+```bash
+TRUSTMARK_USE_GPU=1 ./trustmark_example /path/to/image.jpg
+```
 
-5. **Place models in the models/ directory**:
-    Use the rust xtask `cargo xtask fetch-models` and copy the files from `../rust/models`
+## GPU Support
 
-## Usage
+### Execution Providers
 
-### Basic Example
+- **CPU** - Default, works everywhere
+- **CoreML** - macOS/iOS (Neural Engine + GPU)
+- **CUDA** - Linux/Windows with NVIDIA GPUs
+- **DirectML** - Windows with any GPU
+
+### Environment Variable
+
+Set `TRUSTMARK_USE_GPU=1` to enable GPU acceleration. The library will automatically:
+1. Select the appropriate provider for your platform
+2. Fall back to CPU if GPU is unavailable
+3. Log which provider is being used
+
+## API Usage
 
 ```cpp
 #include "trustmark/trustmark.h"
-#include <opencv2/opencv.hpp>
 
-using namespace TrustMark;
-
-int main() {
-    // Initialize TrustMark
-    TrustMark trustmark(true, true, 100, "Q");
-
-    // Load cover image
-    cv::Mat coverImage = cv::imread("input.jpg");
-
-    // Encode watermark
-    std::string result = trustmark.encode(coverImage, "Hello, TrustMark!", Mode::TEXT);
-
-    // Decode watermark
-    auto [message, success, version] = trustmark.decode(coverImage, Mode::TEXT);
-
-    if (success) {
-        std::cout << "Decoded: " << message << std::endl;
-    }
-
-    return 0;
-}
-```
-
-### Advanced Usage
-
-```cpp
-// Initialize with custom parameters
-TrustMark trustmark(
-    true,                           // Use error correction
-    true,                           // Verbose output
-    200,                            // Secret length in bits
-    "P",                            // High-quality model variant
-    EncodingType::BCH_5,           // BCH error correction
-    0.8f                           // Concentrate watermark region
+// Initialize with GPU support
+TrustMark::TrustMark trustmark(
+    false,                              // useECC
+    true,                               // verbose
+    100,                                // secretLen
+    "P",                                // modelType
+    TrustMark::EncodingType::BCH_5,     // encodingType
+    1.0f,                               // concentrateWmRegion
+    TrustMark::ExecutionProvider::CoreML, // GPU acceleration
+    0                                   // device ID
 );
 
-// Encode with custom parameters
-std::string result = trustmark.encode(
-    coverImage,                     // Input image
-    "Secret message",               // Message to embed
-    Mode::TEXT,                     // Text mode
-    1.5f,                          // Watermark strength
-    "bicubic"                      // Interpolation method
+// Encode watermark
+cv::Mat watermarked = trustmark.encode(
+    coverImage,
+    "0110111100000110...", // 100-bit secret
+    TrustMark::Mode::BINARY,
+    0.95f,
+    "bilinear"
 );
 
-// Decode with error handling
-try {
-    auto [message, success, version] = trustmark.decode(stegoImage, Mode::TEXT);
-
-    if (success) {
-        std::cout << "Message: " << message << std::endl;
-        std::cout << "Version: " << version << std::endl;
-    } else {
-        std::cerr << "Decode failed: " << trustmark.getLastError() << std::endl;
-    }
-} catch (const std::exception& e) {
-    std::cerr << "Exception: " << e.what() << std::endl;
-}
+// Decode watermark
+auto [bits, ok, version] = trustmark.decode(
+    watermarkedImage,
+    TrustMark::Mode::BINARY
+);
 ```
 
-### Running the Example
+## Directory Structure After Build
 
+```
+cpp/
+??? build/                      # Build directory (git ignored)
+?   ??? trustmark_example       # Compiled executable
+?   ??? libtrustmark_cpp.a      # Static library
+??? output/                     # Output directory (contents ignored)
+?   ??? watermarked_*.jpg       # Generated watermarked images
+?   ??? debug_stego_*.png       # Debug outputs
+??? third_party/                # Downloaded dependencies (git ignored)
+?   ??? ort/                    # ONNX Runtime
+?       ??? include/
+?       ??? lib/
+??? onnxruntime/                # Full source (git ignored, optional)
+```
+
+## Development Workflow
+
+### Clean Build
 ```bash
-# The example is built automatically with the library
-# Navigate to the build directory
 cd build
-
-# Run with an input image and custom message
-./trustmark_example input.jpg "Secret message"
-
-# Run with default message
-./trustmark_example input.jpg
-
-# Example with a test image (if available)
-./trustmark_example ../images/ripley.jpg "Hello TrustMark!"
+make clean
+cmake ..
+make -j8
 ```
 
-## API Reference
-
-### TrustMark Class
-
-#### Constructor
-```cpp
-TrustMark(bool useECC = true,
-          bool verbose = true,
-          int secretLen = 100,
-          const std::string& modelType = "Q",
-          EncodingType encodingType = EncodingType::BCH_5,
-          float concentrateWmRegion = 1.0f);
+### Rebuild After Code Changes
+```bash
+cd build
+make -j8
 ```
 
-#### Methods
+### Add to Git
+```bash
+# Add source code
+git add trustmark/
+git add examples/
+git add CMakeLists.txt
+git add README.md
 
-##### Encoding
-```cpp
-std::string encode(const cv::Mat& coverImage,
-                   const std::string& secret,
-                   Mode mode = Mode::TEXT,
-                   float wmStrength = 1.0f,
-                   const std::string& wmMerge = "bilinear");
+# Models (if distributing)
+git add models/*.onnx
+
+# DON'T add build artifacts
+# (already in .gitignore)
 ```
 
-##### Decoding
-```cpp
-std::tuple<std::string, bool, int> decode(const cv::Mat& stegoImage,
-                                         Mode mode = Mode::TEXT);
-```
+## CI/CD Considerations
 
-##### Watermark Removal
-```cpp
-cv::Mat removeWatermark(const cv::Mat& stegoImage,
-                        float wmStrength = 1.0f,
-                        const std::string& wmMerge = "bilinear");
-```
+For CI/CD pipelines:
+1. Run `fetch_ort.sh` to download ONNX Runtime
+2. Cache `third_party/ort/` between builds
+3. Don't commit `third_party/` to git
+4. Models should be versioned separately or via Git LFS
 
-##### Utility Methods
-```cpp
-int getSchemaCapacity() const;
-bool isVerbose() const;
-std::string getModelType() const;
-std::string getLastError() const;
-void clearLastError();
-```
+## License
 
-### Enums
-
-```cpp
-enum class EncodingType {
-    BCH_SUPER = 0,  // Super error correction
-    BCH_3 = 3,      // BCH-3 error correction
-    BCH_4 = 2,      // BCH-4 error correction
-    BCH_5 = 1       // BCH-5 error correction (default)
-};
-
-enum class Mode {
-    TEXT = 0,        // Text message mode
-    BINARY = 1       // Binary data mode
-};
-```
+See LICENSE file in repository root.

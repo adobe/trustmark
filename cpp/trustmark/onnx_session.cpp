@@ -1,7 +1,10 @@
 #include "onnx_session.h"
 #include <iostream>
 #include <fstream>
-#include <algorithm>
+
+#ifdef __APPLE__
+#include <coreml_provider_factory.h>
+#endif
 
 namespace TrustMark {
 
@@ -10,9 +13,14 @@ static Ort::Env globalEnv_;
 static bool globalEnvInitialized_ = false;
 
 // Constructor
-ONNXRuntimeSession::ONNXRuntimeSession(const std::string& modelPath, const std::string& sessionName)
+ONNXRuntimeSession::ONNXRuntimeSession(const std::string& modelPath,
+                                       const std::string& sessionName,
+                                       ExecutionProvider provider,
+                                       int deviceId)
     : modelPath_(modelPath)
     , sessionName_(sessionName)
+    , executionProvider_(provider)
+    , deviceId_(deviceId)
     , session_(nullptr)
 {
     // Initialize global environment if not already done
@@ -30,6 +38,64 @@ ONNXRuntimeSession::ONNXRuntimeSession(const std::string& modelPath, const std::
     sessionOptions_.SetIntraOpNumThreads(8);
     sessionOptions_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
+    // Configure execution provider based on the requested provider
+    try {
+        switch (executionProvider_) {
+            case ExecutionProvider::CUDA: {
+                std::cout << "Attempting to enable CUDA execution provider on device " << deviceId_ << "..." << std::endl;
+                OrtCUDAProviderOptions cuda_options;
+                cuda_options.device_id = deviceId_;
+                cuda_options.arena_extend_strategy = 0; // kNextPowerOfTwo
+                cuda_options.gpu_mem_limit = SIZE_MAX;
+                cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
+                cuda_options.do_copy_in_default_stream = 1;
+                sessionOptions_.AppendExecutionProvider_CUDA(cuda_options);
+                std::cout << "CUDA execution provider enabled successfully" << std::endl;
+                break;
+            }
+            case ExecutionProvider::CoreML: {
+                std::cout << "Attempting to enable CoreML execution provider..." << std::endl;
+                #ifdef __APPLE__
+                // Use the proper CoreML EP C API
+                // Enable on subgraph and create MLProgram (newer format for better GPU/ANE support)
+                uint32_t coreml_flags = COREML_FLAG_ENABLE_ON_SUBGRAPH | COREML_FLAG_CREATE_MLPROGRAM;
+
+                // Call the C API to add CoreML provider
+                OrtStatus* status = OrtSessionOptionsAppendExecutionProvider_CoreML(
+                    static_cast<OrtSessionOptions*>(sessionOptions_),
+                    coreml_flags
+                );
+
+                if (status != nullptr) {
+                    const char* error_msg = Ort::GetApi().GetErrorMessage(status);
+                    Ort::GetApi().ReleaseStatus(status);
+                    throw Ort::Exception(error_msg, OrtErrorCode::ORT_EP_FAIL);
+                }
+
+                std::cout << "CoreML execution provider enabled successfully (Neural Engine + GPU)" << std::endl;
+                #else
+                throw Ort::Exception("CoreML is only available on Apple platforms", OrtErrorCode::ORT_EP_FAIL);
+                #endif
+                break;
+            }
+            case ExecutionProvider::DirectML: {
+                std::cout << "Attempting to enable DirectML execution provider on device " << deviceId_ << "..." << std::endl;
+                sessionOptions_.AppendExecutionProvider("DML", {{"device_id", std::to_string(deviceId_)}});
+                std::cout << "DirectML execution provider enabled successfully" << std::endl;
+                break;
+            }
+            case ExecutionProvider::CPU:
+            default:
+                std::cout << "Using CPU execution provider" << std::endl;
+                // CPU is the default, no additional configuration needed
+                break;
+        }
+    } catch (const Ort::Exception& e) {
+        std::cerr << "Warning: Failed to enable requested execution provider: " << e.what() << std::endl;
+        std::cerr << "Falling back to CPU execution provider" << std::endl;
+        executionProvider_ = ExecutionProvider::CPU;
+    }
+
     // Initialize session
     if (!initializeSession()) {
         setLastError("Failed to initialize ONNX Runtime session: " + getLastError());
@@ -44,6 +110,8 @@ ONNXRuntimeSession::~ONNXRuntimeSession() = default;
 ONNXRuntimeSession::ONNXRuntimeSession(ONNXRuntimeSession&& other) noexcept
     : modelPath_(std::move(other.modelPath_))
     , sessionName_(std::move(other.sessionName_))
+    , executionProvider_(other.executionProvider_)
+    , deviceId_(other.deviceId_)
     , env_(std::move(other.env_))
     , sessionOptions_(std::move(other.sessionOptions_))
     , session_(std::move(other.session_))
@@ -60,6 +128,8 @@ ONNXRuntimeSession& ONNXRuntimeSession::operator=(ONNXRuntimeSession&& other) no
     if (this != &other) {
         modelPath_ = std::move(other.modelPath_);
         sessionName_ = std::move(other.sessionName_);
+        executionProvider_ = other.executionProvider_;
+        deviceId_ = other.deviceId_;
         env_ = std::move(other.env_);
         sessionOptions_ = std::move(other.sessionOptions_);
         session_ = std::move(other.session_);

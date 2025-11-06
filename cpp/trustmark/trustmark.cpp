@@ -1,10 +1,8 @@
 #include "trustmark.h"
 #include "onnx_session.h"
 #include "image_processor.h"
-#include "bch_ecc.h"
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <cmath>
 
@@ -15,7 +13,8 @@ namespace TrustMark {
 // Constructor
 TrustMark::TrustMark(bool useECC, bool verbose, int secretLen,
                      const std::string& modelType, EncodingType encodingType,
-                     float concentrateWmRegion)
+                     float concentrateWmRegion, ExecutionProvider executionProvider,
+                     int deviceId)
     : useECC_(useECC)
     , verbose_(verbose)
     , secretLen_(secretLen)
@@ -23,6 +22,8 @@ TrustMark::TrustMark(bool useECC, bool verbose, int secretLen,
     , encodingType_(encodingType)
     , concentrateWmRegion_(concentrateWmRegion)
     , aspectRatioLim_(2.0f)
+    , executionProvider_(executionProvider)
+    , deviceId_(deviceId)
     , modelResolutionEnc_(256)
     , modelResolutionDec_(256)
 
@@ -51,6 +52,25 @@ TrustMark::TrustMark(bool useECC, bool verbose, int secretLen,
         std::cout << "Initializing TrustMark watermarking "
                   << (useECC ? "with" : "without") << " ECC using ["
                   << modelType << "]" << std::endl;
+
+        // Print execution provider info
+        std::string providerName;
+        switch (executionProvider_) {
+            case ExecutionProvider::CUDA:
+                providerName = "CUDA (GPU " + std::to_string(deviceId_) + ")";
+                break;
+            case ExecutionProvider::CoreML:
+                providerName = "CoreML (Apple Neural Engine)";
+                break;
+            case ExecutionProvider::DirectML:
+                providerName = "DirectML (GPU " + std::to_string(deviceId_) + ")";
+                break;
+            case ExecutionProvider::CPU:
+            default:
+                providerName = "CPU";
+                break;
+        }
+        std::cout << "Execution Provider: " << providerName << std::endl;
     }
 
     // Initialize models
@@ -72,12 +92,14 @@ TrustMark::TrustMark(TrustMark&& other) noexcept
     , encodingType_(other.encodingType_)
     , concentrateWmRegion_(other.concentrateWmRegion_)
     , aspectRatioLim_(other.aspectRatioLim_)
+    , executionProvider_(other.executionProvider_)
+    , deviceId_(other.deviceId_)
     , modelResolutionEnc_(other.modelResolutionEnc_)
     , modelResolutionDec_(other.modelResolutionDec_)
 
     , encoderSession_(std::move(other.encoderSession_))
     , decoderSession_(std::move(other.decoderSession_))
-    
+
     , imageProcessor_(std::move(other.imageProcessor_))
     , lastError_(std::move(other.lastError_))
 {
@@ -93,6 +115,8 @@ TrustMark& TrustMark::operator=(TrustMark&& other) noexcept {
         encodingType_ = other.encodingType_;
         concentrateWmRegion_ = other.concentrateWmRegion_;
         aspectRatioLim_ = other.aspectRatioLim_;
+        executionProvider_ = other.executionProvider_;
+        deviceId_ = other.deviceId_;
         modelResolutionEnc_ = other.modelResolutionEnc_;
         modelResolutionDec_ = other.modelResolutionDec_;
 
@@ -136,14 +160,16 @@ bool TrustMark::initializeModels() {
 
 
     // Initialize encoder session
-    encoderSession_ = std::make_unique<ONNXRuntimeSession>(encoderPath, "encoder");
+    encoderSession_ = std::make_unique<ONNXRuntimeSession>(encoderPath, "encoder",
+                                                           executionProvider_, deviceId_);
     if (!encoderSession_->isInitialized()) {
         setLastError("Failed to initialize encoder: " + encoderSession_->getLastError());
         return false;
     }
 
     // Initialize decoder session
-    decoderSession_ = std::make_unique<ONNXRuntimeSession>(decoderPath, "decoder");
+    decoderSession_ = std::make_unique<ONNXRuntimeSession>(decoderPath, "decoder",
+                                                           executionProvider_, deviceId_);
     if (!decoderSession_->isInitialized()) {
         setLastError("Failed to initialize decoder: " + decoderSession_->getLastError());
         return false;
@@ -472,18 +498,18 @@ std::tuple<std::string, bool, int> TrustMark::decode(const cv::Mat& stegoImage, 
                           << inputs[0].GetTensorTypeAndShapeInfo().GetShape()[2] << " "
                           << inputs[0].GetTensorTypeAndShapeInfo().GetShape()[3] << std::endl;
             }
-            
+
             outputs = decoderSession_->run(inputs);
-            
+
             if (verbose_) {
                 std::cout << "Decoder run completed, got " << outputs.size() << " outputs" << std::endl;
             }
-            
+
             if (outputs.empty()) {
                 setLastError("Decoder failed to produce output");
                 return {"", false, -1};
             }
-            
+
         } catch (const std::exception& e) {
             if (verbose_) {
                 std::cout << "Decoder run failed with exception: " << e.what() << std::endl;

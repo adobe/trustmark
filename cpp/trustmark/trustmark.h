@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <opencv2/opencv.hpp>
+#include "execution_provider.h"
 
 namespace TrustMark {
 
@@ -34,7 +35,9 @@ public:
               int secretLen = 100,
               const std::string& modelType = "Q",
               EncodingType encodingType = EncodingType::BCH_5,
-              float concentrateWmRegion = 1.0f);
+              float concentrateWmRegion = 1.0f,
+              ExecutionProvider executionProvider = ExecutionProvider::CPU,
+              int deviceId = 0);
 
     // Destructor
     ~TrustMark();
@@ -63,6 +66,8 @@ public:
     int getSchemaCapacity() const;
     bool isVerbose() const { return verbose_; }
     std::string getModelType() const { return modelType_; }
+    ExecutionProvider getExecutionProvider() const { return executionProvider_; }
+    int getDeviceId() const { return deviceId_; }
 
     // Error handling
     std::string getLastError() const { return lastError_; }
@@ -92,6 +97,8 @@ private:
     EncodingType encodingType_;
     float concentrateWmRegion_;
     float aspectRatioLim_;
+    ExecutionProvider executionProvider_;
+    int deviceId_;
 
     // Model resolution settings
     int modelResolutionEnc_;

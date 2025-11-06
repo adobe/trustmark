@@ -5,6 +5,7 @@
 #include <memory>
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
+#include "execution_provider.h"
 
 namespace TrustMark {
 
@@ -12,7 +13,9 @@ class ONNXRuntimeSession {
 public:
     // Constructor
     ONNXRuntimeSession(const std::string& modelPath,
-                      const std::string& sessionName = "default");
+                      const std::string& sessionName = "default",
+                      ExecutionProvider provider = ExecutionProvider::CPU,
+                      int deviceId = 0);
 
     // Destructor
     ~ONNXRuntimeSession();
@@ -32,6 +35,8 @@ public:
     bool isInitialized() const { return session_ != nullptr; }
     std::string getModelPath() const { return modelPath_; }
     std::string getSessionName() const { return sessionName_; }
+    ExecutionProvider getExecutionProvider() const { return executionProvider_; }
+    int getDeviceId() const { return deviceId_; }
 
     // Get input/output info
     std::vector<std::string> getInputNames() const;
@@ -51,6 +56,8 @@ private:
     // Member variables
     std::string modelPath_;
     std::string sessionName_;
+    ExecutionProvider executionProvider_;
+    int deviceId_;
     Ort::Env env_;
     Ort::SessionOptions sessionOptions_;
     std::unique_ptr<Ort::Session> session_;

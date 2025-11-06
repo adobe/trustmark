@@ -2,7 +2,6 @@
 #include <string>
 #include <opencv2/opencv.hpp>
 #include "trustmark/trustmark.h"
-#include "trustmark/image_processor.h"
 
 
 
@@ -37,8 +36,33 @@ int main(int argc, char* argv[]) {
         std::cout << "Image loaded successfully. Size: "
                   << coverImage.cols << "x" << coverImage.rows << std::endl;
 
+        // Determine execution provider based on environment
+        // Try GPU first, fall back to CPU if not available
+        TrustMark::ExecutionProvider provider = TrustMark::ExecutionProvider::CPU;
+        int deviceId = 0;
+
+        // Check if user wants to use GPU via environment variable or command line
+        const char* useGpuEnv = std::getenv("TRUSTMARK_USE_GPU");
+        if (useGpuEnv && std::string(useGpuEnv) == "1") {
+            #ifdef __APPLE__
+                // On macOS, prefer CoreML
+                provider = TrustMark::ExecutionProvider::CoreML;
+                std::cout << "GPU mode requested: Using CoreML (Apple Neural Engine)" << std::endl;
+            #elif defined(_WIN32)
+                // On Windows, prefer DirectML
+                provider = TrustMark::ExecutionProvider::DirectML;
+                std::cout << "GPU mode requested: Using DirectML" << std::endl;
+            #else
+                // On Linux, use CUDA
+                provider = TrustMark::ExecutionProvider::CUDA;
+                std::cout << "GPU mode requested: Using CUDA" << std::endl;
+            #endif
+        } else {
+            std::cout << "Using CPU mode (set TRUSTMARK_USE_GPU=1 to enable GPU acceleration)" << std::endl;
+        }
+
         // Initialize TrustMark with P variant (disable ECC since we pass full 100-bit schema)
-        TrustMark::TrustMark trustmark(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f);
+        TrustMark::TrustMark trustmark(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f, provider, deviceId);
 
         if (!trustmark.getLastError().empty()) {
             std::cerr << "Error initializing TrustMark: " << trustmark.getLastError() << std::endl;
@@ -81,7 +105,7 @@ int main(int argc, char* argv[]) {
 
         // Run C++ decoder on both outputs to validate end-to-end
         std::cout << "\nDecoding via C++..." << std::endl;
-        TrustMark::TrustMark tmDec(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f);
+        TrustMark::TrustMark tmDec(false, true, 100, "P", TrustMark::EncodingType::BCH_5, 1.0f, provider, deviceId);
         cv::Mat jpg = cv::imread(outputPath, cv::IMREAD_COLOR);
         cv::Mat png = cv::imread(outputPng, cv::IMREAD_COLOR);
         auto [bitsJpg, okJpg, vJpg] = tmDec.decode(jpg, TrustMark::Mode::BINARY);

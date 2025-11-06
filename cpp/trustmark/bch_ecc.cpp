@@ -1,7 +1,6 @@
 #include "bch_ecc.h"
 #include <iostream>
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 namespace TrustMark {
