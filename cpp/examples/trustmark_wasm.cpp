@@ -43,9 +43,9 @@ int main(int argc, char* argv[]) {
 
     // Check arguments
     if (argc < 2) {
-        std::cout << "\nUsage: " << argv[0] << " <model.onnx>" << std::endl;
+        std::cout << "\nUsage: " << argv[0] << " <model.ort>" << std::endl;
         std::cout << "\nExample:" << std::endl;
-        std::cout << "  wasmtime run --dir=. " << argv[0] << " encoder_P.onnx" << std::endl;
+        std::cout << "  wasmtime --dir=models::/models " << argv[0] << " /models/encoder_P.ort" << std::endl;
         return 1;
     }
 

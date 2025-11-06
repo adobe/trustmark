@@ -53,27 +53,36 @@ It runs with wasmtime/wasmer runtimes, no JavaScript involved.
 
 ### Step 1: Build ONNX Runtime for WASI
 
-The ONNX Runtime WASI fork (included as a submodule at `cpp/onnxruntime-wasi`) includes a minimal build that produces `ort-wasi-simd.wasm`. This WASM module contains both ONNX Runtime and your custom application code.
+The ONNX Runtime WASI fork is included as a git submodule at `cpp/onnxruntime-wasi`. The minimal build produces `ort-wasi-simd.wasm`, which contains both ONNX Runtime and your custom application code.
 
 ```bash
-cd /path/to/trustmark/cpp/onnxruntime-wasi
+# From the repository root
+cd trustmark/cpp/onnxruntime-wasi
+
+# Set WASI SDK path
 export WASI_SDK_PATH=/opt/wasi-sdk
+
+# Build ONNX Runtime for WASI
 ./build_wasi_simple.sh
 ```
 
 This creates:
-- `build_wasi/ort-wasi-simd.wasm` (21MB) - The WASM binary
-- `build_wasi/lib/libonnxruntime*.a` - Static libraries
+- `cpp/onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm` (21MB) - The WASM binary
+- `cpp/onnxruntime-wasi/build_wasi/lib/libonnxruntime*.a` - Static libraries
 
 ### Step 2: Create TrustMark WASM Example
 
 The ONNX Runtime build compiles `onnxruntime/wasm/simple.cpp` into the WASM module. To add TrustMark functionality, replace this file with your TrustMark example:
 
 ```bash
-cd /path/to/trustmark/cpp/onnxruntime-wasi
+# From the onnxruntime-wasi submodule directory
+# (or use: cd trustmark/cpp/onnxruntime-wasi from repo root)
 
-# Create TrustMark example (or copy from cpp/examples/trustmark_wasm.cpp)
-cat > onnxruntime/wasm/simple.cpp << 'EOF'
+# Option 1: Copy the reference implementation
+cp ../examples/trustmark_wasm.cpp onnxruntime-wasi/wasm/simple.cpp
+
+# Option 2: Create your own implementation
+cat > onnxruntime-wasi/wasm/simple.cpp << 'EOF'
 #include <iostream>
 #include <vector>
 #include <onnxruntime_cxx_api.h>
@@ -100,25 +109,30 @@ int main(int argc, char* argv[]) {
 }
 EOF
 
-# Rebuild
+# Build
 export WASI_SDK_PATH=/opt/wasi-sdk
+cd onnxruntime-wasi
 ./build_wasi_simple.sh
 ```
 
 **Note**: Do NOT use `try-catch` blocks in WASM code - the build uses `-fno-exceptions`.
 
-### Step 3: Convert Models to ORT Format
+### Step 4: Convert Models to ORT Format
 
 The minimal ONNX Runtime build only supports `.ort` (optimized ONNX Runtime) format, not `.onnx` format.
+The `onnxruntime` and `onnx` python packages are required.
 
 ```bash
-cd /path/to/trustmark/cpp/models
+# From the repository root
+cd trustmark/cpp
+./fetch_models.sh
+
+cd onnxruntime-wasi/tools/python
 
 # Convert all ONNX models to ORT format
-cd /path/to/trustmark/cpp/onnxruntime-wasi/tools/python
 PYTHONPATH=/opt/homebrew/lib/python3.11/site-packages python3.11 convert_onnx_models_to_ort.py \
-  /path/to/trustmark/cpp/models \
-  --output_dir /path/to/trustmark/cpp/models
+  ../../../models \
+  --output_dir ../../../models
 ```
 
 This creates:
@@ -132,37 +146,40 @@ Use the `with_runtime_opt.ort` versions for smaller file sizes.
 
 ## Running the WASM Module
 
-The WASM binary is located at:
+The WASM binary is located within the submodule at:
 ```
-/path/to/trustmark/cpp/onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm
+cpp/onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm
 ```
 
 ### Basic Test
 
 ```bash
-cd /path/to/trustmark/cpp
+# From the repository root
+cd trustmark/cpp
 
-# Test encoder
-wasmtime --dir=models::/models \
+# Test encoder with real image
+wasmtime --dir=.::.  --dir=models::/models --dir=../images::/images \
   onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm \
-  /models/encoder_P.ort
+  /models/encoder_P.ort /images/ufo_240.jpg
 
-# Test decoder
-wasmtime --dir=models::/models \
+# Test decoder (extracts watermark bits)
+wasmtime --dir=.::.  --dir=models::/models \
   onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm \
-  /models/decoder_P.ort
+  /models/decoder_P.ort output_watermarked.png
 ```
 
 ### Example Output
 
+**Encoder with real image:**
 ```
-TrustMark WASM Example
-======================
+TrustMark WASM Example with Image Support
+==========================================
 
 Loading model: /models/encoder_P.ort
-? ONNX Runtime initialized
-? Session options configured
-? Model loaded successfully!
+Input image: /images/ufo_240.jpg
+✓ ONNX Runtime initialized
+✓ Session options configured
+✓ Model loaded successfully!
 
 Model Information:
   Number of inputs: 2
@@ -171,15 +188,60 @@ Model Information:
   Number of outputs: 1
   Output 0: image
 
-? Detected TrustMark Encoder model
-  Input 0 (image): expecting shape [1, 3, 256, 256]
-  Input 1 (secret): expecting shape [1, 100]
+Loading image...
+✓ Image loaded: 240x240 with 3 channels
+Resizing to 256x256...
+✓ Image resized
+Normalizing image...
+✓ Image normalized to [-1, 1]
+✓ Image converted to CHW format
 
-Running inference with dummy data...
-? Inference completed successfully!
+✓ Detected TrustMark Encoder model
+
+Running encoder inference...
+✓ Inference completed successfully!
   Output shape: [1, 3, 256, 256]
 
-? TrustMark WASM example completed successfully!
+Converting output to image...
+✓ Saved watermarked image: output_watermarked.png
+
+✓ TrustMark WASM example completed successfully!
+```
+
+**Decoder extracting watermark:**
+```
+TrustMark WASM Example with Image Support
+==========================================
+
+Loading model: /models/decoder_P.ort
+Input image: output_watermarked.png
+✓ ONNX Runtime initialized
+✓ Session options configured
+✓ Model loaded successfully!
+
+Model Information:
+  Number of inputs: 1
+  Input 0: image [1, 3, 224, 224]
+  Number of outputs: 1
+  Output 0: output
+
+Loading image...
+✓ Image loaded: 256x256 with 3 channels
+Resizing to 256x256...
+✓ Image resized
+Normalizing image...
+✓ Image normalized to [-1, 1]
+✓ Image converted to CHW format
+
+✓ Detected TrustMark Decoder model
+
+Running decoder inference...
+✓ Inference completed!
+  Output: [1, 100]
+
+Decoded bits: 0110010001111000110100111100001010000100101101011000101001101001110110100001111001000011100011110110
+
+✓ TrustMark WASM completed!
 ```
 
 ## Current Limitations
@@ -202,20 +264,19 @@ The current WASM build supports:
 1. **Standalone Execution** - Runs with wasmtime/wasmer as a command-line tool
 2. **ONNX Model Inference** - Full CPU inference via ONNX Runtime
 3. **ORT Model Format** - Optimized model format for minimal builds
-4. **BCH Error Correction** - Pure C++ implementation works in WASM
-5. **Core Watermarking Logic** - Encoding/decoding algorithms
-6. **WASI File Access** - Read models through WASI APIs
+4. **Image I/O** - Load/save JPEG, PNG, BMP using stb libraries (no OpenCV needed!)
+5. **Image Processing** - Resize, color conversion, normalization
+6. **BCH Error Correction** - Pure C++ implementation works in WASM
+7. **Core Watermarking Logic** - Full encoding/decoding with real images
+8. **WASI File Access** - Read/write images and models through WASI APIs
 
 ### What Doesn't Work Yet
 
 1. **Standard ONNX Models** - Only `.ort` format supported in minimal build
-   - Convert models using the Python script (see Step 3)
-2. **Image I/O** - OpenCV not available in WASM
-   - Need to implement custom image reading (e.g., PNG/JPEG parsers)
-   - Or accept raw pixel data as input
-3. **GPU Acceleration** - No GPU support in WASI yet
+   - Convert models using the Python script (see Step 4)
+2. **GPU Acceleration** - No GPU support in WASI yet
    - CPU-only execution for now
-4. **Exception Handling** - C++ exceptions disabled (`-fno-exceptions`)
+3. **Exception Handling** - C++ exceptions disabled (`-fno-exceptions`)
    - Use error codes and return values instead
 
 ## Architecture
@@ -332,19 +393,29 @@ cd trustmark
 brew install wasmtime python@3.11
 python3.11 -m pip install --break-system-packages onnxruntime onnx
 
-# 3. Build ONNX Runtime WASM
+# 3. Add image support and TrustMark example
+cd cpp/onnxruntime-wasi
+cp -r ../wasm/* onnxruntime/wasm/
+cp ../examples/trustmark_wasm_image.cpp onnxruntime/wasm/simple.cpp
+
+# Modify CMakeLists to include image_utils (one-time edit)
+# Add this line to cmake/onnxruntime_webassembly.cmake:
+#   "${ONNXRUNTIME_ROOT}/wasm/image_utils.cpp"
+
+# 4. Build ONNX Runtime WASM
 cd cpp/onnxruntime-wasi
 export WASI_SDK_PATH=/opt/wasi-sdk
 ./build_wasi_simple.sh
 
-# 4. Convert models to ORT format
+# 5. Convert models to ORT format
 cd tools/python
 PYTHONPATH=/opt/homebrew/lib/python3.11/site-packages python3.11 convert_onnx_models_to_ort.py \
   ../../models \
   --output_dir ../../models
 
-# 5. Test the WASM module
-cd ../../..  # Back to cpp directory
+# 6. Test the WASM module
+cd ../../../..  # Back to repo root
+cd cpp
 wasmtime --dir=models::/models \
   onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm \
   /models/encoder_P.ort
