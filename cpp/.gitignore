@@ -1,12 +1,15 @@
 # Build artifacts
 build/
+build_wasm/
 *.o
 *.a
 *.so
 *.dylib
 *.dll
 *.exe
+*.wasm
 trustmark_example
+trustmark_wasm_example
 
 # CMake generated files
 CMakeCache.txt
@@ -46,6 +49,8 @@ output/*.jpeg
 
 # ONNX models (fetched via script)
 models/*.onnx
+models/*.ort
+models/*.config
 !models/.gitkeep
 
 # Dependencies (should be fetched via script)
@@ -89,6 +94,6 @@ coverage/
 
 # WebAssembly build artifacts (if added later)
 *.wasm
-*.js.map
 *.wasm.map
+*.js.map
 wasm_build/

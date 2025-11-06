@@ -2,6 +2,12 @@
 
 GPU-accelerated watermarking library using ONNX Runtime.
 
+**Features:**
+- ? Native C++ implementation with GPU acceleration (CoreML/CUDA/DirectML)
+- ? WebAssembly (WASM) support for wasm32-wasip2 (see [WASM_BUILD.md](WASM_BUILD.md))
+- ? Cross-platform (macOS, Linux, Windows)
+- ? Command-line and library API
+
 ## Repository Structure
 
 ### Files to Include in Git

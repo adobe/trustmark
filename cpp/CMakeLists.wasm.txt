@@ -1,0 +1,97 @@
+cmake_minimum_required(VERSION 3.16)
+project(TrustMarkWasm VERSION 1.0.0 LANGUAGES CXX)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# WASM-specific settings
+if(BUILD_FOR_WASM)
+    message(STATUS "Building for WASM32-WASIP2")
+    
+    # Disable features not available in WASM
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__wasm__ -D__wasip2__")
+    
+    # Find ONNX Runtime for WASI
+    if(DEFINED ONNXRUNTIME_DIR)
+        set(ORT_INCLUDE_DIR "${ONNXRUNTIME_DIR}/../include")
+        set(ORT_LIB_DIR "${ONNXRUNTIME_DIR}")
+        
+        if(EXISTS "${ORT_INCLUDE_DIR}/onnxruntime_cxx_api.h")
+            message(STATUS "Found ONNX Runtime headers: ${ORT_INCLUDE_DIR}")
+        else()
+            message(FATAL_ERROR "ONNX Runtime headers not found at ${ORT_INCLUDE_DIR}")
+        endif()
+        
+        # Find the ONNX Runtime library
+        find_library(ORT_LIB 
+            NAMES onnxruntime_webassembly onnxruntime
+            PATHS "${ORT_LIB_DIR}"
+            NO_DEFAULT_PATH
+        )
+        
+        if(ORT_LIB)
+            message(STATUS "Found ONNX Runtime library: ${ORT_LIB}")
+        else()
+            message(FATAL_ERROR "ONNX Runtime library not found in ${ORT_LIB_DIR}")
+        endif()
+        
+        include_directories(${ORT_INCLUDE_DIR})
+    else()
+        message(FATAL_ERROR "ONNXRUNTIME_DIR not specified")
+    endif()
+    
+    # OpenCV is not available for WASM - we'll need stubs or alternatives
+    # For now, create a minimal build without OpenCV
+    message(WARNING "OpenCV not available for WASM - using minimal image handling")
+    
+else()
+    # Regular build (non-WASM)
+    find_package(OpenCV REQUIRED)
+    include_directories(${OpenCV_INCLUDE_DIRS})
+endif()
+
+# Include directories
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/trustmark)
+
+# Source files (minimal for WASM)
+set(TRUSTMARK_SOURCES
+    trustmark/onnx_session.cpp
+    trustmark/bch_ecc.cpp
+)
+
+if(BUILD_FOR_WASM)
+    # WASM-specific sources with minimal dependencies
+    set(TRUSTMARK_SOURCES ${TRUSTMARK_SOURCES}
+        # Add WASM-specific image processor stub if needed
+    )
+else()
+    # Regular sources with full features
+    set(TRUSTMARK_SOURCES ${TRUSTMARK_SOURCES}
+        trustmark/trustmark.cpp
+        trustmark/image_processor.cpp
+    )
+endif()
+
+# Create the library
+add_library(trustmark_wasm STATIC ${TRUSTMARK_SOURCES})
+
+# Link libraries
+if(BUILD_FOR_WASM)
+    target_link_libraries(trustmark_wasm ${ORT_LIB})
+else()
+    target_link_libraries(trustmark_wasm ${ORT_LIB} ${OpenCV_LIBS})
+endif()
+
+# Create a simple WASM example
+if(BUILD_FOR_WASM)
+    add_executable(trustmark_wasm_example
+        examples/wasm_example.cpp
+    )
+    target_link_libraries(trustmark_wasm_example trustmark_wasm)
+    set_target_properties(trustmark_wasm_example PROPERTIES
+        SUFFIX ".wasm"
+    )
+endif()

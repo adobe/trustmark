@@ -55,13 +55,18 @@ set_target_properties(trustmark_cpp PROPERTIES
     PUBLIC_HEADER "trustmark/trustmark.h"
 )
 
-# Create example executable
+# Create example executables
 add_executable(trustmark_example
     examples/example.cpp
 )
-
 target_include_directories(trustmark_example PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(trustmark_example trustmark_cpp)
+
+add_executable(encode_decode
+    examples/encode_decode.cpp
+)
+target_include_directories(encode_decode PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(encode_decode trustmark_cpp)
 
 # Installation
 install(TARGETS trustmark_cpp
