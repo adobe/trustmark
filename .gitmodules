@@ -1,3 +1,3 @@
 [submodule "cpp/onnxruntime-wasi"]
 	path = cpp/onnxruntime-wasi
-	url = https://github.com/MendyBerger/onnxruntime.git
+	url = git@github.com:MendyBerger/onnxruntime.git

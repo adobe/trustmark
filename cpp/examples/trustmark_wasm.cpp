@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <unordered_map>
 #include <onnxruntime_cxx_api.h>
 
 // Simple TrustMark WASM example
@@ -56,10 +57,20 @@ int main(int argc, char* argv[]) {
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "TrustMarkWASM");
     std::cout << "? ONNX Runtime initialized" << std::endl;
 
-    // Configure session options (CPU only for WASI)
+    // Configure session options
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+    
+    // Try to enable WebGPU execution provider if available
+    try {
+        std::unordered_map<std::string, std::string> webgpu_options;
+        session_options.AppendExecutionProvider("WebGPU", webgpu_options);
+        std::cout << "? WebGPU execution provider enabled" << std::endl;
+    } catch (const Ort::Exception& e) {
+        std::cout << "? WebGPU not available, using CPU with SIMD" << std::endl;
+    }
+    
     std::cout << "? Session options configured" << std::endl;
 
     // Load the model

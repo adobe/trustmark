@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <unordered_map>
 #include <onnxruntime_cxx_api.h>
 
 // Include our minimal image utilities
@@ -63,11 +64,18 @@ int main(int argc, char* argv[]) {
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "TrustMarkWASM");
     std::cout << "? ONNX Runtime initialized" << std::endl;
     
-    // Configure session options (CPU only for WASI)
+    // Configure session options
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-    std::cout << "? Session options configured" << std::endl;
+    
+    // Enable WebGPU execution provider with NCHW layout preference
+    std::unordered_map<std::string, std::string> webgpu_options;
+    webgpu_options["preferredLayout"] = "NCHW";
+    session_options.AppendExecutionProvider("WebGPU", webgpu_options);
+    std::cout << "✓ WebGPU execution provider enabled (NCHW layout)" << std::endl;
+    
+    std::cout << "✓ Session options configured" << std::endl;
     
     // Load the model
     Ort::Session session(env, model_path, session_options);
