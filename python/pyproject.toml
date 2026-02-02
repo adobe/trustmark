@@ -32,7 +32,7 @@ classifiers = [
 
 dependencies = [ 
   "omegaconf>=2.1",
-  "numpy>=1.20.0,<2.0.0",
+  "numpy>=1.20.0,<3.0.0",
   "torch>=2.1.2",
   "torchvision>=0.16.2",
   "lightning>=2.0",
