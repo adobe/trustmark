@@ -425,7 +425,7 @@ class TrustMark():
                     return '', False, -1
                for bbox in boxes_pred:
                     # bbox is normalized [x1, y1, x2, y2]
-                    w, h = rotated_cover
+                    w, h = rotated_cover.size
                     x1 = int(bbox[0] * w)
                     y1 = int(bbox[1] * h)
                     x2 = int(bbox[2] * w)
