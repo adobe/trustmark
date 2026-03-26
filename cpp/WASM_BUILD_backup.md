@@ -27,7 +27,7 @@ It runs with wasmtime/wasmer runtimes, no JavaScript involved.
 
    **Note**: WASI SDK 28 or newer is required for wasm32-wasip2 support. Check [releases](https://github.com/WebAssembly/wasi-sdk/releases) for the latest version.
 
-2. **Modified ONNX Runtime with WebGPU** - Already included as a git submodule
+2. **Modified ONNX Runtime** - Already included as a git submodule
    ```bash
    # Initialize submodules when cloning the repository
    git clone --recurse-submodules -b cpp_wasi https://github.com/cdmurph32/trustmark.git
@@ -38,14 +38,8 @@ It runs with wasmtime/wasmer runtimes, no JavaScript involved.
    git submodule update --init --recursive
    ```
 
-3. **Graphtime** (for running WASM modules with WebGPU support)
+3. **Wasmtime** (for running WASM modules)
    ```bash
-   # Clone and build graphtime (WebGPU-enabled WASI runtime)
-   git clone https://github.com/bytecodealliance/wasi-gfx.git
-   cd wasi-gfx/graphtime
-   cargo build --release
-   
-   # Or use wasmtime for CPU-only execution
    brew install wasmtime
    ```
 
@@ -57,67 +51,87 @@ It runs with wasmtime/wasmer runtimes, no JavaScript involved.
 
 ## Build Process
 
-### Step 1: Download Models
+### Step 1: Convert Models to ORT Format and Generate Operator Config
 
-The TrustMark models are hosted separately. Download them using the provided script:
+**IMPORTANT**: This step must be done FIRST. It generates the `required_operators.config` file that tells the build which operators to include.
+
+The minimal ONNX Runtime build only supports `.ort` (optimized ONNX Runtime) format, not `.onnx` format.
+The `onnxruntime`, `onnx`, and `flatbuffers` Python packages are required.
 
 ```bash
+# Install required Python packages
+python3.11 -m pip install --break-system-packages onnxruntime onnx flatbuffers
+
 # From the repository root
 cd trustmark/cpp
 ./fetch_models.sh
+
+cd onnxruntime-wasi/tools/python
+
+# Convert all ONNX models to ORT format
+# This also generates models/required_operators.config
+PYTHONPATH=/opt/homebrew/lib/python3.11/site-packages python3.11 convert_onnx_models_to_ort.py \
+  ../../../models \
+  --output_dir ../../../models
 ```
 
-**Note**: The repository includes `models/required_operators_complete.config` which contains the complete list of operators needed by TrustMark models. This was generated from the original ONNX models and includes all necessary operators including missing ones like `Add`, `Mul`, `Sigmoid`, `Tanh`, `Pad`, `Slice`, `Transpose`, `Constant`, `ConstantOfShape`, and `Shape`.
+This creates:
+- `encoder_P.ort` (33MB) - Fixed optimization
+- `encoder_P.with_runtime_opt.ort` (17MB) - Runtime optimization (smaller)
+- `decoder_P.ort` (91MB) - Fixed optimization
+- `decoder_P.with_runtime_opt.ort` (45MB) - Runtime optimization (smaller)
+- **`required_operators.config`** - Lists operators needed by the models
+- Similar files for Q, B, C variants
 
-### Step 2: Create TrustMark WASM Example with Image Support
+Use the `with_runtime_opt.ort` versions for smaller file sizes.
 
-The ONNX Runtime build compiles `onnxruntime/wasm/simple.cpp` into the WASM module. Use the image-enabled example:
+### Step 2: Create TrustMark WASM Example
+
+The ONNX Runtime build compiles `onnxruntime/wasm/simple.cpp` into the WASM module. To add TrustMark functionality, copy your TrustMark example:
 
 ```bash
 # From trustmark/cpp directory
 cd onnxruntime-wasi
 
-# Copy the image-enabled TrustMark WASM example
-cp ../examples/trustmark_wasm_image.cpp onnxruntime/wasm/simple.cpp
+# Copy the TrustMark WASM example
+cp ../examples/trustmark_wasm.cpp onnxruntime/wasm/simple.cpp
 ```
 
-**Important Notes**:
-- The image example includes `image_utils.cpp` which provides image loading/saving via stb libraries
-- Do NOT use `try-catch` blocks in WASM code - the build uses `-fno-exceptions`
-- WebGPU execution provider is enabled with NCHW layout preference
+**Note**: Do NOT use `try-catch` blocks in WASM code - the build uses `-fno-exceptions`.
 
-### Step 3: Build ONNX Runtime for WASI with Complete Operators and WebGPU
+### Step 3: Build ONNX Runtime for WASI with TrustMark Operators
 
-**CRITICAL**: The build includes ALL operators required by TrustMark models, with WebGPU and MLAS SIMD support.
+**CRITICAL**: You must use the correct build script that includes the operators specified in `required_operators.config`.
+
+The ONNX Runtime WASI fork is included as a git submodule at `cpp/onnxruntime-wasi`. The minimal build with operator configuration produces `ort-wasi-simd.wasm`, which contains both ONNX Runtime and your custom application code.
 
 ```bash
 # From trustmark/cpp/onnxruntime-wasi directory
 export WASI_SDK_PATH=/opt/wasi-sdk
 
-# Build with complete operator support and WebGPU
+# Use the build script that includes TrustMark operators
 ./build_wasi_minimal_with_config.sh
 ```
 
 This script:
-1. Reads `models/required_operators_complete.config` (includes ALL required operators)
+1. Reads `models/required_operators.config`
 2. Generates operator registration files using `reduce_op_kernels.py`
-3. Enables WebGPU execution provider
-4. Enables MLAS SIMD optimizations for WASI (critical fix!)
-5. Includes image_utils.cpp for image loading/saving
-6. Creates `build_wasi_minimal_config/ort-wasi-simd.wasm` (~24MB)
+3. Builds a minimal ONNX Runtime with ONLY the operators needed by TrustMark models
+4. Creates `build_wasi_minimal_config/ort-wasi-simd.wasm` (21MB)
 
-#### Complete Operator List
+#### What Operators Are Included?
 
-The TrustMark models require these operators (from `required_operators_complete.config`):
+The TrustMark models require these operators:
 ```
-ai.onnx;17;Add,Cast,Concat,Constant,ConstantOfShape,Conv,Flatten,Gemm,GlobalAveragePool,MaxPool,Mul,Pad,Relu,Reshape,Resize,Shape,Sigmoid,Slice,Tanh,Transpose
+ai.onnx;1;GlobalAveragePool
+ai.onnx;11;Conv
+ai.onnx;12;MaxPool
+ai.onnx;13;Cast,Concat,Flatten,Gemm,Resize
+ai.onnx;14;Relu,Reshape
 com.microsoft;1;FusedConv,QuickGelu
 ```
 
-**Key Fixes**:
-1. **Missing Operators**: Previous configs were missing `Add`, `Mul`, `Sigmoid`, `Tanh`, `Pad`, `Slice`, `Transpose`, `Constant`, `ConstantOfShape`, `Shape`
-2. **MLAS SIMD**: Fixed `cmake/onnxruntime_mlas.cmake` to enable SIMD for WASI builds (not just Emscripten)
-3. **WebGPU**: Enabled with NCHW layout preference and static WGSL templates
+**Why This Matters**: The old `build_wasi_simple.sh` script builds a minimal runtime with a default set of operators, but **does not include** the Microsoft contrib ops (`FusedConv`, `QuickGelu`) that TrustMark models require. This results in garbage output (near-zero values) even though the build succeeds and the model loads.
 
 ## Running the WASM Module
 
@@ -126,73 +140,31 @@ The WASM binary is located at:
 cpp/onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm
 ```
 
-### With Graphtime (WebGPU Support)
-
-**Graphtime** is a WASI runtime that supports WebGPU. It's part of the wasi-gfx project.
-
-#### Directory Mapping Syntax
-
-Graphtime uses `--dir=HOST_PATH::WASM_PATH` to map directories:
-- `--dir=.::.` maps current directory on host to root (`/`) in WASM
-- `--dir=models::/models` maps `./models` on host to `/models` in WASM
-- `--dir=../images::/images` maps `../images` on host to `/images` in WASM
-
-#### Argument Passing
-
-Arguments after the WASM file are passed to the WASM program as command-line arguments:
-```bash
-graphtime [graphtime_options] wasm_file.wasm [program_arguments]
-```
-
-#### Example Usage
+### Basic Test
 
 ```bash
-# From the cpp directory (workspace)
-cd /path/to/trustmark/cpp
+# From the repository root
+cd trustmark/cpp
 
-# Run encoder with real image
-/path/to/graphtime/target/release/graphtime \
-  --dir=.::.  --dir=models::/models --dir=../images::/images \
+# Test encoder with dummy data
+wasmtime --dir=.::.  --dir=models::/models \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/encoder_P.ort /images/ufo_240.jpg
+  /models/encoder_P.ort
 
-# What this does:
-# - Maps cpp/ → / (for output files)
-# - Maps cpp/models/ → /models (for .ort model files)
-# - Maps trustmark/images/ → /images (for input images)
-# - Passes arguments: ["/models/encoder_P.ort", "/images/ufo_240.jpg"]
-# - Output saved as output_watermarked.png in current directory
-
-# Run decoder
-/path/to/graphtime/target/release/graphtime \
-  --dir=.::.  --dir=models::/models \
+# Test decoder with dummy data
+wasmtime --dir=.::.  --dir=models::/models \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/decoder_P.ort output_watermarked.png
-```
-
-**Note**: WebGPU currently has shader compatibility issues (f16 support in Naga), so it falls back to CPU with MLAS SIMD optimizations, which works correctly.
-
-### With Wasmtime (CPU Only)
-
-```bash
-# From the cpp directory (workspace)
-cd /path/to/trustmark/cpp
-
-# Run encoder with real image (CPU/SIMD)
-wasmtime --dir=.::.  --dir=models::/models --dir=../images::/images \
-  onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/encoder_P.ort /images/ufo_240.jpg
+  /models/decoder_P.ort
 ```
 
 ### Example Output
 
-**Encoder with real image (CPU/SIMD):**
+**Encoder with dummy data:**
 ```
-TrustMark WASM Example with Image Support
-==========================================
+TrustMark WASM Example
+======================
 
 Loading model: /models/encoder_P.ort
-Input image: /images/ufo_240.jpg
 ✓ ONNX Runtime initialized
 ✓ Session options configured
 ✓ Model loaded successfully!
@@ -204,107 +176,120 @@ Model Information:
   Number of outputs: 1
   Output 0: image
 
-Loading image...
-✓ Image loaded: 240x240 with 3 channels
-Resizing to 256x256...
-✓ Image resized
-Converting RGB to BGR...
-✓ Converted to BGR format
-Normalizing image...
-✓ Image normalized to [-1, 1]
-✓ Image converted to CHW format
-
 ✓ Detected TrustMark Encoder model
+  Input 0 (image): expecting shape [1, 3, 256, 256]
+  Input 1 (secret): expecting shape [1, 100]
 
-Running encoder inference...
+Running inference with dummy data...
 ✓ Inference completed successfully!
   Output shape: [1, 3, 256, 256]
 
-Converting output to image...
-✓ Saved watermarked image: output_watermarked.png
+✓ Output Statistics:
+  Min value: -0.999998
+  Max value: 0.999727
+  Average |value|: 0.730813
+  First 10 values: 0.298983 0.352422 0.417632 0.411946 0.177688 0.130361 0.0561037 -0.0374335 0.0218523 -0.234194 
 
-✓ TrustMark WASM completed!
+✓ Output values look reasonable (not near-zero)
+
+✓ TrustMark WASM example completed successfully!
 ```
 
-**Output Verification**: 
-- Input image is loaded, resized, and preprocessed using stb libraries
-- Model runs with MLAS SIMD optimizations  
-- Output image is saved as `output_watermarked.png` (144KB)
-- Native vs WASM comparison shows nearly identical results:
-  - Native first value: `-0.772725`
-  - WASM first value: `-0.77311` ✅
+**Decoder with dummy data:**
+```
+TrustMark WASM Example
+======================
+
+Loading model: /models/decoder_P.ort
+✓ ONNX Runtime initialized
+✓ Session options configured
+✓ Model loaded successfully!
+
+Model Information:
+  Number of inputs: 1
+  Input 0: image [1, 3, 224, 224]
+  Number of outputs: 1
+  Output 0: output
+
+✓ Detected TrustMark Decoder model
+  Input 0 (image): expecting shape [1, 3, 224/256, 224/256]
+
+Running inference with dummy data...
+✓ Inference completed successfully!
+  Output shape: [1, 100]
+
+✓ Output Statistics:
+  Min value: -12.5254
+  Max value: 10.1346
+  Average |value|: 2.89901
+  First 10 values: -0.0614567 1.06644 4.60636 -1.2866 -1.75627 2.61656 -1.24109 -0.343011 -0.952926 1.11766 
+
+✓ Output values look reasonable (not near-zero)
+
+✓ TrustMark WASM example completed successfully!
+```
+
+**Output Verification**: The statistics confirm the build is working correctly:
+- **Encoder**: Average |value| of 0.73 (normalized image output in [-1, 1] range)
+- **Decoder**: Average |value| of 2.9 (reasonable logits for 100-bit classification)
+- **Not near-zero**: This confirms the operators are being executed correctly
 
 ## Current Status
 
-### WASM Build Status: **✅ FULLY WORKING with CPU/SIMD**
+### WASM Build Status: **✅ WORKING - CPU Only, Standalone Runtime**
 
 WASI (WebAssembly System Interface) runs **outside the browser** as a standalone application.
 
 ### ✅ What Works
 
-1. **TrustMark Model Inference** - ✅ FULLY WORKING
+1. **TrustMark Model Inference** - ✅ CONFIRMED WORKING
    - Encoder and decoder models produce correct output
-   - Complete operator list included (all `ai.onnx` and `com.microsoft` ops)
-   - Output matches native execution (verified)
-2. **MLAS SIMD Optimizations** - ✅ WORKING
-   - Properly enabled for WASI builds (fixed `cmake/onnxruntime_mlas.cmake`)
-   - Sigmoid, QuickGelu, and other math operations use SIMD
-   - Performance equivalent to native CPU execution
-3. **Image I/O** - ✅ WORKING
-   - Image loading via `stb_image.h`
-   - Image resizing via `stb_image_resize2.h`
-   - Image saving via `stb_image_write.h`  
-   - Full preprocessing pipeline (resize, BGR conversion, normalization, CHW format)
-4. **Standalone Execution** - Runs with wasmtime/graphtime
-5. **ORT Model Format** - Optimized `.ort` format for minimal builds
-6. **BCH Error Correction** - Pure C++ implementation
-7. **WASI File Access** - Full filesystem access through WASI APIs
+   - All required operators included (`FusedConv`, `QuickGelu`, etc.)
+   - Output values verified (not near-zero garbage)
+2. **Standalone Execution** - Runs with wasmtime/wasmer as a command-line tool
+3. **ONNX Runtime CPU** - Full CPU inference via ONNX Runtime WASI fork
+4. **ORT Model Format** - Optimized model format for minimal builds
+5. **BCH Error Correction** - Pure C++ implementation works in WASM
+6. **WASI File Access** - Read models through WASI filesystem APIs
 
-### ⚠️ WebGPU Status
+### ❌ What Doesn't Work Yet
 
-**WebGPU Execution Provider**: ✅ Compiles and initializes, but ❌ runtime shader errors
+1. **Image I/O** - No image loading/saving in current build
+   - Need to add stb_image libraries and image_utils.cpp
+   - Can add this by modifying CMakeLists and including image support files
+2. **Standard ONNX Models** - Only `.ort` format supported in minimal build
+   - Must convert models using the Python script
+3. **GPU Acceleration** - No GPU support in WASI yet
+   - CPU-only execution for now
+4. **Exception Handling** - C++ exceptions disabled (`-fno-exceptions`)
+   - Use error codes and return values instead
 
-- Build includes WebGPU support (`-Donnxruntime_USE_WEBGPU=ON`)
-- Provider successfully initializes in graphtime runtime
-- **Issue**: Generated WGSL shaders use `f16` (half-precision float) which Naga doesn't support yet
-- **Workaround**: Falls back to CPU with MLAS SIMD (works perfectly)
-- **Future**: Will work once Naga adds f16 support or ONNX Runtime adds f16 disable option
+### 🔧 Known Issues (RESOLVED)
 
-### 🔧 Critical Fixes Applied
+**Issue**: Minimal builds without operator configuration produce garbage output (near-zero values)
 
-**1. Missing Operators (FIXED)**
-- **Problem**: Initial config missed 10 critical operators (`Add`, `Mul`, `Sigmoid`, `Tanh`, `Pad`, `Slice`, `Transpose`, `Constant`, `ConstantOfShape`, `Shape`)
-- **Solution**: Created `required_operators_complete.config` with all operators from ONNX models
-- **Result**: Models now execute correctly
+**Root Cause**: The default minimal build includes only basic operators and excludes:
+- Microsoft contrib ops: `FusedConv`, `QuickGelu`
+- Some standard ops used by TrustMark models
 
-**2. MLAS SIMD Not Enabled for WASI (FIXED)**  
-- **Problem**: `cmake/onnxruntime_mlas.cmake` only checked for "Emscripten", not "WASI"
-- **Solution**: Added WASI to the conditional: `if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR CMAKE_SYSTEM_NAME STREQUAL "WASI")`
-- **Result**: MLAS now uses SIMD intrinsics, output matches native (was 1000x off before!)
+**Solution**: Use `build_wasi_minimal_with_config.sh` which:
+1. Reads `required_operators.config` generated during model conversion
+2. Uses `reduce_op_kernels.py` to generate operator registration files
+3. Includes all operators needed by TrustMark models
 
-**3. Image Utilities Not Compiled (FIXED)**
-- **Problem**: `image_utils.cpp` wasn't included in CMake build
-- **Solution**: Added to `cmake/onnxruntime_webassembly.cmake`
-- **Result**: Full image processing pipeline works
-
-### 📊 Verification
-
-Native vs WASM output comparison (UFO image):
-```
-Native: -0.772725 -0.641855 -0.494406  0.028933  0.188807
-WASM:   -0.773110 -0.642837 -0.527322  0.064551  0.234590
-```
-**Result**: Nearly identical! ✅ (Differences < 0.05 are expected due to minor SIMD implementation variations)
+**Verification**: Output statistics show correct values:
+- Encoder: Average |value| = 0.73 (expected: 0.5-0.8 for normalized images)
+- Decoder: Average |value| = 2.9 (expected: 2-4 for logits)
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────┐
-│     Host System (Linux/macOS/Windows)  │
-│                                        │
-│  ┌───────────────────────────────────┐ │
-│  │   Wasmtime                        │ │
-│  │                                   │ │
+┌──────────────────────────────────────────┐
+│     Host System (Linux/macOS/Windows)   │
+│                                          │
+│  ┌────────────────────────────────────┐ │
+│  │   Wasmtime / Wasmer Runtime        │ │
+│  │                                    │ │
 │  │  ┌──────────────────────────────┐ │ │
 │  │  │  ort-wasi-simd.wasm          │ │ │
 │  │  │  (21MB WASM binary)          │ │ │
@@ -324,15 +309,15 @@ WASM:   -0.773110 -0.642837 -0.527322  0.064551  0.234590
 │  │  │  │  BCH Error Correction  │  │ │ │
 │  │  │  └────────────────────────┘  │ │ │
 │  │  └──────────────────────────────┘ │ │
-│  └───────────────────────────────────┘ │
-│                  ↕                     │
-│  ┌───────────────────────────────────┐ │
-│  │   WASI APIs                       │ │
-│  │   - File I/O (read .ort models    │ │
-│  │   - Command-line arguments        │ │
-│  │   - Environment variables         │ │
-│  └───────────────────────────────────┘ │
-└────────────────────────────────────────┘
+│  └────────────────────────────────────┘ │
+│                  ↕                       │
+│  ┌────────────────────────────────────┐ │
+│  │   WASI APIs                        │ │
+│  │   - File I/O (read .ort models)    │ │
+│  │   - Command-line arguments         │ │
+│  │   - Environment variables          │ │
+│  └────────────────────────────────────┘ │
+└──────────────────────────────────────────┘
 ```
 
 ## Use Cases
