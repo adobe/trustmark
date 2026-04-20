@@ -8,44 +8,44 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # WASM-specific settings
 if(BUILD_FOR_WASM)
     message(STATUS "Building for WASM32-WASIP2")
-    
+
     # Disable features not available in WASM
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__wasm__ -D__wasip2__")
-    
+
     # Find ONNX Runtime for WASI
     if(DEFINED ONNXRUNTIME_DIR)
         set(ORT_INCLUDE_DIR "${ONNXRUNTIME_DIR}/../include")
         set(ORT_LIB_DIR "${ONNXRUNTIME_DIR}")
-        
+
         if(EXISTS "${ORT_INCLUDE_DIR}/onnxruntime_cxx_api.h")
             message(STATUS "Found ONNX Runtime headers: ${ORT_INCLUDE_DIR}")
         else()
             message(FATAL_ERROR "ONNX Runtime headers not found at ${ORT_INCLUDE_DIR}")
         endif()
-        
+
         # Find the ONNX Runtime library
-        find_library(ORT_LIB 
+        find_library(ORT_LIB
             NAMES onnxruntime_webassembly onnxruntime
             PATHS "${ORT_LIB_DIR}"
             NO_DEFAULT_PATH
         )
-        
+
         if(ORT_LIB)
             message(STATUS "Found ONNX Runtime library: ${ORT_LIB}")
         else()
             message(FATAL_ERROR "ONNX Runtime library not found in ${ORT_LIB_DIR}")
         endif()
-        
+
         include_directories(${ORT_INCLUDE_DIR})
     else()
         message(FATAL_ERROR "ONNXRUNTIME_DIR not specified")
     endif()
-    
+
     # OpenCV is not available for WASM - we'll need stubs or alternatives
     # For now, create a minimal build without OpenCV
     message(WARNING "OpenCV not available for WASM - using minimal image handling")
-    
+
 else()
     # Regular build (non-WASM)
     find_package(OpenCV REQUIRED)

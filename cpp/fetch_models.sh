@@ -20,12 +20,12 @@ fetch_model() {
     local filename="$1"
     local url="${MODEL_ROOT}/${filename}"
     local output="models/${filename}"
-    
+
     if [[ -f "$output" ]]; then
         echo "? ${filename} already exists, skipping..."
         return 0
     fi
-    
+
     echo "Downloading ${filename}..."
     if curl -L --fail -o "$output" "$url"; then
         echo "? ${filename} downloaded successfully"

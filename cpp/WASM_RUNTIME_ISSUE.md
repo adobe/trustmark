@@ -311,6 +311,6 @@ python3.11 onnxruntime/tools/python/convert_onnx_models_to_ort.py \
 
 ---
 
-**Document Version**: 1.0  
-**Date**: November 6, 2024  
+**Document Version**: 1.0
+**Date**: November 6, 2024
 **Status**: OPEN - Awaiting ONNX Runtime WASI fix or investigation

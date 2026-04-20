@@ -133,10 +133,10 @@ Without this, MLAS functions like `MlasComputeLogistic` (used by Sigmoid, QuickG
 
 ## 🚀 Current Status
 
-**Build**: ✅ FULLY WORKING  
-**CPU/SIMD**: ✅ WORKING (output matches native)  
-**Image I/O**: ✅ WORKING (full preprocessing pipeline)  
-**WebGPU**: ⚠️ Compiles and initializes, runtime shader errors (f16 unsupported)  
+**Build**: ✅ FULLY WORKING
+**CPU/SIMD**: ✅ WORKING (output matches native)
+**Image I/O**: ✅ WORKING (full preprocessing pipeline)
+**WebGPU**: ⚠️ Compiles and initializes, runtime shader errors (f16 unsupported)
 
 ## 📚 Documentation
 

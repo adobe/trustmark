@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-    
+
     // Try to enable WebGPU execution provider if available
     try {
         std::unordered_map<std::string, std::string> webgpu_options;
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
     } catch (const Ort::Exception& e) {
         std::cout << "? WebGPU not available, using CPU with SIMD" << std::endl;
     }
-    
+
     std::cout << "? Session options configured" << std::endl;
 
     // Load the model

@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
 
         // Save JPEG (high quality)
         std::string outputPath = "../output/watermarked_" + std::to_string(time(nullptr)) + ".jpg";
-        std::vector<int> params; 
+        std::vector<int> params;
         params.push_back(cv::IMWRITE_JPEG_QUALITY); params.push_back(90);
         params.push_back(cv::IMWRITE_JPEG_OPTIMIZE); params.push_back(1);
         if (cv::imwrite(outputPath, watermarkedBGR, params)) {

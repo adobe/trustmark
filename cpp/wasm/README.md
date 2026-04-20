@@ -36,7 +36,7 @@ Size savings: 99% smaller than OpenCV!
 ImageUtils::Image img = ImageUtils::loadImage("photo.jpg");
 
 if (!img.empty()) {
-    std::cout << "Loaded: " << img.width << "x" << img.height 
+    std::cout << "Loaded: " << img.width << "x" << img.height
               << " with " << img.channels << " channels" << std::endl;
 }
 ```

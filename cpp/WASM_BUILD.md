@@ -44,7 +44,7 @@ It runs with wasmtime/wasmer runtimes, no JavaScript involved.
    git clone https://github.com/bytecodealliance/wasi-gfx.git
    cd wasi-gfx/graphtime
    cargo build --release
-   
+
    # Or use wasmtime for CPU-only execution
    brew install wasmtime
    ```
@@ -226,9 +226,9 @@ Converting output to image...
 ✓ TrustMark WASM completed!
 ```
 
-**Output Verification**: 
+**Output Verification**:
 - Input image is loaded, resized, and preprocessed using stb libraries
-- Model runs with MLAS SIMD optimizations  
+- Model runs with MLAS SIMD optimizations
 - Output image is saved as `output_watermarked.png` (144KB)
 - Native vs WASM comparison shows nearly identical results:
   - Native first value: `-0.772725`
@@ -253,7 +253,7 @@ WASI (WebAssembly System Interface) runs **outside the browser** as a standalone
 3. **Image I/O** - ✅ WORKING
    - Image loading via `stb_image.h`
    - Image resizing via `stb_image_resize2.h`
-   - Image saving via `stb_image_write.h`  
+   - Image saving via `stb_image_write.h`
    - Full preprocessing pipeline (resize, BGR conversion, normalization, CHW format)
 4. **Standalone Execution** - Runs with wasmtime/graphtime
 5. **ORT Model Format** - Optimized `.ort` format for minimal builds
@@ -277,7 +277,7 @@ WASI (WebAssembly System Interface) runs **outside the browser** as a standalone
 - **Solution**: Created `required_operators_complete.config` with all operators from ONNX models
 - **Result**: Models now execute correctly
 
-**2. MLAS SIMD Not Enabled for WASI (FIXED)**  
+**2. MLAS SIMD Not Enabled for WASI (FIXED)**
 - **Problem**: `cmake/onnxruntime_mlas.cmake` only checked for "Emscripten", not "WASI"
 - **Solution**: Added WASI to the conditional: `if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR CMAKE_SYSTEM_NAME STREQUAL "WASI")`
 - **Result**: MLAS now uses SIMD intrinsics, output matches native (was 1000x off before!)

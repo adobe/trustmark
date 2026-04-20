@@ -188,7 +188,7 @@ Running inference with dummy data...
   Min value: -0.999998
   Max value: 0.999727
   Average |value|: 0.730813
-  First 10 values: 0.298983 0.352422 0.417632 0.411946 0.177688 0.130361 0.0561037 -0.0374335 0.0218523 -0.234194 
+  First 10 values: 0.298983 0.352422 0.417632 0.411946 0.177688 0.130361 0.0561037 -0.0374335 0.0218523 -0.234194
 
 ✓ Output values look reasonable (not near-zero)
 
@@ -222,7 +222,7 @@ Running inference with dummy data...
   Min value: -12.5254
   Max value: 10.1346
   Average |value|: 2.89901
-  First 10 values: -0.0614567 1.06644 4.60636 -1.2866 -1.75627 2.61656 -1.24109 -0.343011 -0.952926 1.11766 
+  First 10 values: -0.0614567 1.06644 4.60636 -1.2866 -1.75627 2.61656 -1.24109 -0.343011 -0.952926 1.11766
 
 ✓ Output values look reasonable (not near-zero)
 

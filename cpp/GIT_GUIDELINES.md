@@ -32,7 +32,7 @@
 ```
 build/                  # Entire build directory
 *.o                     # Object files
-*.a                     # Static libraries  
+*.a                     # Static libraries
 *.so, *.dylib, *.dll    # Dynamic libraries
 trustmark_example       # Compiled executable
 libtrustmark_cpp.*      # Built library

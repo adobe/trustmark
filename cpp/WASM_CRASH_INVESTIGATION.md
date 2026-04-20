@@ -23,7 +23,7 @@ The crash happens in `__main_void` before `main()` is even called, indicating a 
 
 ## What Was Tested
 1. ? **Simple "Hello World" WASM** - Crashes
-2. ? **Basic ONNX inference test** - Crashes  
+2. ? **Basic ONNX inference test** - Crashes
 3. ? **Full TrustMark image processing** - Crashes
 4. ? **Clean rebuild from scratch** - Still crashes
 5. ? **Older WASM binary from Nov 6 10:46** - Also crashes now
