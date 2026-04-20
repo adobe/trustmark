@@ -132,16 +132,18 @@ cpp/onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm
 
 #### Directory Mapping Syntax
 
-Graphtime uses `--dir=HOST_PATH::WASM_PATH` to map directories:
-- `--dir=.::.` maps current directory on host to root (`/`) in WASM
-- `--dir=models::/models` maps `./models` on host to `/models` in WASM
-- `--dir=../images::/images` maps `../images` on host to `/images` in WASM
+Graphtime uses `--dir=GUEST_PATH::HOST_PATH` to map directories:
+- `--dir=.::.` maps current directory on host to `.` in WASM
+- `--dir=/models::models` maps `./models` on host to `/models` in WASM
+- `--dir=/images::../images` maps `../images` on host to `/images` in WASM
+
+If only one path is given (no `::`), it is used as both guest and host path.
 
 #### Argument Passing
 
-Arguments after the WASM file are passed to the WASM program as command-line arguments:
+Arguments after `--` are passed to the WASM program as command-line arguments:
 ```bash
-graphtime [graphtime_options] wasm_file.wasm [program_arguments]
+graphtime [graphtime_options] wasm_file.wasm -- [program_arguments]
 ```
 
 #### Example Usage
@@ -152,22 +154,29 @@ cd /path/to/trustmark/cpp
 
 # Run encoder with real image
 /path/to/graphtime/target/release/graphtime \
-  --dir=.::.  --dir=models::/models --dir=../images::/images \
+  --dir=.::.  --dir=/models::models --dir=/images::../images \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/encoder_P.ort /images/ufo_240.jpg
+  -- /models/encoder_P.ort /images/ufo_240.jpg
 
 # What this does:
-# - Maps cpp/ → / (for output files)
+# - Maps cpp/ → . (for output files)
 # - Maps cpp/models/ → /models (for .ort model files)
 # - Maps trustmark/images/ → /images (for input images)
-# - Passes arguments: ["/models/encoder_P.ort", "/images/ufo_240.jpg"]
+# - Passes arguments (after --): ["/models/encoder_P.ort", "/images/ufo_240.jpg"]
 # - Output saved as output_watermarked.png in current directory
 
 # Run decoder
 /path/to/graphtime/target/release/graphtime \
-  --dir=.::.  --dir=models::/models \
+  --dir=.::.  --dir=/models::models \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/decoder_P.ort output_watermarked.png
+  -- /models/decoder_P.ort output_watermarked.png
+```
+
+Set `USE_WEBGPU=1` to attempt GPU execution (falls back to CPU if shaders fail):
+```bash
+USE_WEBGPU=1 /path/to/graphtime --dir=.::.  --dir=/models::models \
+  onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
+  -- /models/encoder_P.ort output_watermarked.png
 ```
 
 **Note**: WebGPU currently has shader compatibility issues (f16 support in Naga), so it falls back to CPU with MLAS SIMD optimizations, which works correctly.
@@ -179,9 +188,9 @@ cd /path/to/trustmark/cpp
 cd /path/to/trustmark/cpp
 
 # Run encoder with real image (CPU/SIMD)
-wasmtime --dir=.::.  --dir=models::/models --dir=../images::/images \
+wasmtime --dir=.::.  --dir=/models::models --dir=/images::../images \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/encoder_P.ort /images/ufo_240.jpg
+  -- /models/encoder_P.ort /images/ufo_240.jpg
 ```
 
 ### Example Output
@@ -381,12 +390,12 @@ export WASI_SDK_PATH=/opt/wasi-sdk
 **Error: Cannot open model file**
 ```bash
 # Make sure to grant filesystem access with --dir
-wasmtime --dir=models::/models ./ort-wasi-simd.wasm /models/encoder_P.ort
+wasmtime --dir=/models::models ./ort-wasi-simd.wasm -- /models/encoder_P.ort
 ```
 
 **Error: File not found**
 - Check that the path inside WASM uses the mapped directory name
-- Example: `--dir=models::/models` maps host `models/` to `/models` in WASM
+- Example: `--dir=/models::models` maps host `models/` to `/models` in WASM
 
 ## Files and Locations
 
@@ -442,9 +451,9 @@ export WASI_SDK_PATH=/opt/wasi-sdk
 
 # 6. Test the WASM module
 cd ..  # Back to cpp/
-wasmtime --dir=.::.  --dir=models::/models \
+wasmtime --dir=.::.  --dir=/models::models \
   onnxruntime-wasi/build_wasi_minimal_config/ort-wasi-simd.wasm \
-  /models/encoder_P.ort
+  -- /models/encoder_P.ort
 
 # Verify output shows reasonable values (not near-zero)
 # Expected: Average |value| > 0.5

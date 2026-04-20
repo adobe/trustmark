@@ -1,4 +1,0 @@
-[submodule "cpp/onnxruntime-wasi"]
-	path = cpp/onnxruntime-wasi
-	url = git@github.com:cdmurph32/onnxruntime.git
-	branch = wasi-main
