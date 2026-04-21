@@ -12,8 +12,8 @@
 // Simple TrustMark WASM example with real image support
 // Uses stb libraries for image I/O (no OpenCV needed)
 
-// Watermark strength for P variant (matches Python: WM_STRENGTH=1.0 * 1.25 for P)
-static const float WM_STRENGTH = 1.25f;
+// Watermark strength: matches Rust CLI default (strength=0.95 * variant multiplier 1.25)
+static const float WM_STRENGTH = 0.95f * 1.25f; // = 1.1875
 // Residual clamp range (matches native C++ implementation)
 static const float RESIDUAL_CLAMP = 0.2f;
 
@@ -83,12 +83,21 @@ int main(int argc, char* argv[]) {
     std::cout << "==========================================" << std::endl;
 
     if (argc < 3) {
-        std::cout << "\nUsage: " << argv[0] << " <encoder_or_decoder.ort> <input_image.jpg>" << std::endl;
+        std::cout << "\nUsage: " << argv[0] << " <encoder_or_decoder.ort> <input_image.jpg> [100-bit-string]" << std::endl;
+        std::cout << "  100-bit-string: BCH-encoded bits for encoder (e.g. from `trustmark encode`)" << std::endl;
         return 1;
     }
 
     const char* model_path = argv[1];
     const char* image_path = argv[2];
+
+    // Optional 100-bit BCH-encoded watermark (for encoder).
+    // Default: BCH-Bch5 encoding of "1011011110011000111111000000011111011111011100000110110110111"
+    // (the standard TrustMark test watermark, verified to round-trip with the Rust CLI).
+    const char* bits_arg = (argc >= 4) ? argv[3] : nullptr;
+    static const char* DEFAULT_BITS =
+        "1011011110011000111111000000011111011111011100000110110110111"
+        "000110010101101111010011011000010000001";
 
     std::cout << "\nLoading model: " << model_path << std::endl;
     std::cout << "Input image: " << image_path << std::endl;
@@ -149,8 +158,18 @@ int main(int argc, char* argv[]) {
         std::vector<float> image_data = imageToTensor(cover);
         std::cout << "✓ Image normalized to [-1, 1] (RGB, CHW)" << std::endl;
 
-        // All-zeros secret (100 bits)
-        std::vector<float> secret_data(100, 0.0f);
+        // Build secret from 100-bit BCH-encoded string
+        const char* bits_str = bits_arg ? bits_arg : DEFAULT_BITS;
+        size_t bits_len = strlen(bits_str);
+        if (bits_len != 100) {
+            std::cerr << "✗ Secret must be exactly 100 bits, got " << bits_len << std::endl;
+            return 1;
+        }
+        std::vector<float> secret_data(100);
+        for (int i = 0; i < 100; i++) {
+            secret_data[i] = (bits_str[i] == '1') ? 1.0f : 0.0f;
+        }
+        std::cout << "✓ Secret bits: " << bits_str << std::endl;
         std::vector<int64_t> image_shape = {1, 3, 256, 256};
         std::vector<int64_t> secret_shape = {1, 100};
 

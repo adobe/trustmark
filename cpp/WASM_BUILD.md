@@ -75,16 +75,35 @@ export WASI_SDK_PATH=/opt/wasi-sdk
 # Build with WebGPU and SIMD support
 ./build_wasi.sh Release \
   -Donnxruntime_USE_WEBGPU=ON \
-  -Donnxruntime_ENABLE_WEBASSEMBLY_SIMD=ON
+  -Donnxruntime_ENABLE_WEBASSEMBLY_SIMD=ON \
+  -Donnxruntime_EXTENDED_MINIMAL_BUILD=ON \
+  -Donnxruntime_WGSL_TEMPLATE=static
 ```
 
-Output: `build_wasi/ort-wasi-simd.wasm` (~19MB)
+Output: `build_wasi/ort-wasi-simd.wasm` (~12MB plain WASM module)
 
 The build includes:
 - WebGPU execution provider (wasi:webgpu component model)
 - MLAS SIMD optimizations
 - All TrustMark operators (`ai.onnx;17;Add,Cast,Concat,...` + `com.microsoft;1;FusedConv,QuickGelu`)
 - Image utilities (stb_image, stb_image_resize2, stb_image_write)
+
+**REQUIRED**: After building, convert the WASM module to a WASI Preview 2 component:
+
+```bash
+# Still in onnxruntime-wasi directory
+ADAPTER=$(find ~/.cargo/registry -name "wasi_snapshot_preview1.command.wasm" | \
+  grep "wasi-preview1-component-adapter-provider" | sort -rV | head -1)
+
+wasm-tools component new build_wasi/ort-wasi-simd.wasm \
+  --adapt "wasi_snapshot_preview1=$ADAPTER" \
+  -o build_wasi/ort-wasi-simd.wasm
+```
+
+Verify it's a component (magic bytes should be `00 61 73 6d 0d 00 01 00`):
+```bash
+xxd build_wasi/ort-wasi-simd.wasm | head -1
+```
 
 ### Step 3: Prepare the Entry Point
 
@@ -128,18 +147,20 @@ GRAPHTIME=/path/to/graphtime/target/release/graphtime
 WASM=onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm
 
 # Run encoder (embeds watermark into image)
+# NOTE: encoder_P.ort (plain) works fine with WebGPU
 USE_WEBGPU=1 $GRAPHTIME \
   --dir "/models::$(pwd)/models" \
   --dir "/images::$(pwd)/../images" \
   --dir ".::./" \
-  $WASM -- /models/encoder_P.ort /images/ufo_240.jpg
+  $WASM -- /models/encoder_P.with_runtime_opt.ort /images/ufo_240.jpg
 
 # Run decoder (recovers watermark bits from image)
+# NOTE: must use with_runtime_opt.ort for correct WebGPU decoder output
 USE_WEBGPU=1 $GRAPHTIME \
   --dir "/models::$(pwd)/models" \
   --dir "/images::$(pwd)/output" \
   --dir ".::./" \
-  $WASM -- /models/decoder_P.ort /images/output_watermarked.png
+  $WASM -- /models/decoder_P.with_runtime_opt.ort /images/output_watermarked.png
 ```
 
 `USE_WEBGPU=1` enables GPU execution via WebGPU. Omit for CPU fallback.
@@ -203,7 +224,7 @@ Running decoder inference...
 ✓ Inference completed!
   Output: [1, 100]
 
-Decoded bits: 0110100010111000101111001101110001100011000111001011100100000111111101110101111111110000111011000111
+Decoded bits: 1011011110011000111111000000011111011111011100000110110110111000110010101101111010011011000010000001
 
 ✓ TrustMark WASM completed!
 ```
@@ -216,8 +237,8 @@ Decoded bits: 011010001011100010111100110111000110001100011100101110010000011111
 |---------|--------|
 | TrustMark encoder inference | ✅ WebGPU + CPU |
 | TrustMark decoder inference | ✅ WebGPU + CPU |
-| WebGPU execution provider | ✅ Working |
-| f16 shader support | ✅ Fixed (device auto-enables SHADER_F16) |
+| WebGPU execution provider | ✅ Working (f16 ops on GPU, 0 bit-flip errors) |
+| f16 shader precision | ✅ Fixed (use with_runtime_opt.ort models, 0 bit flips) |
 | MLAS SIMD optimizations | ✅ Working |
 | Image I/O (stb) | ✅ Working |
 | WASI file access | ✅ Working |
@@ -235,9 +256,16 @@ Decoded bits: 011010001011100010111100110111000110001100011100101110010000011111
 **3. Image Utilities**
 - Added `image_utils.cpp` to CMake build
 
-**4. WebGPU f16 shaders**
-- `wasi-gfx-runtime`: `request_device` now auto-enables `SHADER_F16` when adapter supports it
-- Without this, ORT generates f16 Cast shaders that Naga rejects
+**4. WebGPU f16 precision fix**
+- Root cause: plain `.ort` models trigger ORT runtime graph optimization which inserts
+  `InsertedPrecisionFreeCast` f16 Cast nodes; these break WebGPU EP data flow for the decoder
+- Fix: use `with_runtime_opt.ort` models — graph optimization is pre-applied offline, Cast nodes
+  are baked into the model and execute correctly on WebGPU
+- `encoder_P.with_runtime_opt.ort` + `decoder_P.with_runtime_opt.ort` → 0 bit-flip errors
+- `onnxruntime/core/platform/posix/env.cc`: added `#ifdef __wasi__` in `GetSelfPid()` to avoid
+  `env::getpid` WASM import (blocks `wasm-tools component new`)
+- `onnxruntime/core/common/logging/logging.cc`: added `#ifdef __wasi__` before `__wasm__` in
+  `GetProcessId()` for same reason
 
 **5. WGPU adapter info crash**
 - `wasi-webgpu-headers/webgpu.c`: `wgpuDeviceGetAdapterInfo` uses `WGPU_SAFE_STRING_VIEW` macro
