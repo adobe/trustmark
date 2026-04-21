@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <algorithm>
 #include <unordered_map>
 #include <onnxruntime_cxx_api.h>
 
@@ -10,6 +11,11 @@
 
 // Simple TrustMark WASM example with real image support
 // Uses stb libraries for image I/O (no OpenCV needed)
+
+// Watermark strength for P variant (matches Python: WM_STRENGTH=1.0 * 1.25 for P)
+static const float WM_STRENGTH = 1.25f;
+// Residual clamp range (matches native C++ implementation)
+static const float RESIDUAL_CLAMP = 0.2f;
 
 void print_model_info(Ort::Session& session) {
     Ort::AllocatorWithDefaultOptions allocator;
@@ -41,16 +47,43 @@ void print_model_info(Ort::Session& session) {
     }
 }
 
+// Convert HWC uint8 RGB image to CHW float32 in [-1, 1]
+// stb_image loads as RGB, model expects RGB — no channel swap needed.
+static std::vector<float> imageToTensor(const ImageUtils::Image& img) {
+    int H = img.height, W = img.width, C = img.channels;
+    std::vector<float> tensor(C * H * W);
+    for (int h = 0; h < H; h++) {
+        for (int w = 0; w < W; w++) {
+            for (int c = 0; c < C; c++) {
+                float v = img.data[(h * W + w) * C + c] / 255.0f; // [0,1]
+                tensor[c * H * W + h * W + w] = v * 2.0f - 1.0f; // [-1,1]
+            }
+        }
+    }
+    return tensor;
+}
+
+// Convert CHW float32 [-1,1] back to HWC uint8 RGB
+static ImageUtils::Image tensorToImage(const float* data, int H, int W, int C) {
+    ImageUtils::Image img(W, H, C);
+    for (int h = 0; h < H; h++) {
+        for (int w = 0; w < W; w++) {
+            for (int c = 0; c < C; c++) {
+                float v = (data[c * H * W + h * W + w] + 1.0f) * 0.5f * 255.0f;
+                img.data[(h * W + w) * C + c] = static_cast<uint8_t>(
+                    std::max(0.0f, std::min(255.0f, v)));
+            }
+        }
+    }
+    return img;
+}
+
 int main(int argc, char* argv[]) {
     std::cout << "TrustMark WASM Example with Image Support" << std::endl;
     std::cout << "==========================================" << std::endl;
 
-    // Check arguments
     if (argc < 3) {
-        std::cout << "\nUsage: " << argv[0] << " <encoder.ort> <input_image.jpg>" << std::endl;
-        std::cout << "\nExample:" << std::endl;
-        std::cout << "  wasmtime --dir=.::.  --dir=models::/models \\" << std::endl;
-        std::cout << "    trustmark.wasm /models/encoder_P.ort input.jpg" << std::endl;
+        std::cout << "\nUsage: " << argv[0] << " <encoder_or_decoder.ort> <input_image.jpg>" << std::endl;
         return 1;
     }
 
@@ -60,214 +93,145 @@ int main(int argc, char* argv[]) {
     std::cout << "\nLoading model: " << model_path << std::endl;
     std::cout << "Input image: " << image_path << std::endl;
 
-    // Initialize ONNX Runtime Environment
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "TrustMarkWASM");
-    std::cout << "? ONNX Runtime initialized" << std::endl;
+    std::cout << "✓ ONNX Runtime initialized" << std::endl;
 
-    // Configure session options
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
-    // Enable WebGPU execution provider with NCHW layout preference
-    std::unordered_map<std::string, std::string> webgpu_options;
-    webgpu_options["preferredLayout"] = "NCHW";
-    session_options.AppendExecutionProvider("WebGPU", webgpu_options);
-    std::cout << "✓ WebGPU execution provider enabled (NCHW layout)" << std::endl;
+    if (getenv("USE_WEBGPU")) {
+        std::unordered_map<std::string, std::string> webgpu_options;
+        webgpu_options["preferredLayout"] = "NCHW";
+        session_options.AppendExecutionProvider("WebGPU", webgpu_options);
+        std::cout << "✓ WebGPU execution provider enabled (NCHW layout)" << std::endl;
+    }
 
     std::cout << "✓ Session options configured" << std::endl;
 
-    // Load the model
     Ort::Session session(env, model_path, session_options);
-    std::cout << "? Model loaded successfully!" << std::endl;
+    std::cout << "✓ Model loaded successfully!" << std::endl;
 
-    // Print model information
     print_model_info(session);
 
-    // Load the input image
+    // Load input image (stb_image loads as RGB)
     std::cout << "\nLoading image..." << std::endl;
     ImageUtils::Image img = ImageUtils::loadImage(image_path);
-
     if (img.empty()) {
         std::cerr << "Failed to load image: " << image_path << std::endl;
         return 1;
     }
-
-    std::cout << "? Image loaded: " << img.width << "x" << img.height
+    std::cout << "✓ Image loaded: " << img.width << "x" << img.height
               << " with " << img.channels << " channels" << std::endl;
 
-    // Resize to 256x256 (encoder expects this)
-    std::cout << "Resizing to 256x256..." << std::endl;
-    ImageUtils::Image resized = ImageUtils::resizeImage(img, 256, 256);
-    std::cout << "? Image resized" << std::endl;
-
-    // Ensure RGB format
-    if (resized.channels == 4) {
-        std::cout << "Converting RGBA to RGB..." << std::endl;
-        // Simple RGBA to RGB conversion
-        ImageUtils::Image rgb(256, 256, 3);
-        for (int i = 0; i < 256 * 256; i++) {
-            rgb.data[i * 3 + 0] = resized.data[i * 4 + 0];
-            rgb.data[i * 3 + 1] = resized.data[i * 4 + 1];
-            rgb.data[i * 3 + 2] = resized.data[i * 4 + 2];
+    // Convert RGBA → RGB if needed
+    if (img.channels == 4) {
+        ImageUtils::Image rgb(img.width, img.height, 3);
+        for (int i = 0; i < img.width * img.height; i++) {
+            rgb.data[i * 3 + 0] = img.data[i * 4 + 0];
+            rgb.data[i * 3 + 1] = img.data[i * 4 + 1];
+            rgb.data[i * 3 + 2] = img.data[i * 4 + 2];
         }
-        resized = rgb;
+        img = rgb;
     }
 
-    // Convert RGB to BGR (TrustMark models expect BGR like OpenCV)
-    std::cout << "Converting RGB to BGR..." << std::endl;
-    ImageUtils::Image bgr = ImageUtils::rgbToBgr(resized);
-    std::cout << "? Converted to BGR format" << std::endl;
-
-    // Normalize image to [-1, 1] (what the model expects)
-    std::cout << "Normalizing image..." << std::endl;
-    std::vector<float> normalized = ImageUtils::normalizeImage(bgr);
-    std::cout << "? Image normalized to [-1, 1]" << std::endl;
-
-    // Prepare ONNX input tensor [1, 3, 256, 256]
-    std::vector<int64_t> image_shape = {1, 3, 256, 256};
-    std::vector<float> image_data(1 * 3 * 256 * 256);
-
-    // Convert from HWC to CHW format
-    for (int h = 0; h < 256; h++) {
-        for (int w = 0; w < 256; w++) {
-            int hwc_idx = (h * 256 + w) * 3;
-            int chw_idx_r = 0 * 256 * 256 + h * 256 + w;
-            int chw_idx_g = 1 * 256 * 256 + h * 256 + w;
-            int chw_idx_b = 2 * 256 * 256 + h * 256 + w;
-
-            image_data[chw_idx_r] = normalized[hwc_idx + 0];
-            image_data[chw_idx_g] = normalized[hwc_idx + 1];
-            image_data[chw_idx_b] = normalized[hwc_idx + 2];
-        }
-    }
-
-    std::cout << "? Image converted to CHW format" << std::endl;
-
-    // Check if this is an encoder (2 inputs) or decoder (1 input)
     Ort::AllocatorWithDefaultOptions allocator;
 
+    // ── ENCODER (2 inputs: image + secret) ──────────────────────────────────
     if (session.GetInputCount() == 2) {
-        std::cout << "\n? Detected TrustMark Encoder model" << std::endl;
+        std::cout << "\n✓ Detected TrustMark Encoder model" << std::endl;
 
-        // Create dummy secret for testing
+        // Resize to 256×256 for encoder
+        ImageUtils::Image cover = ImageUtils::resizeImage(img, 256, 256);
+        std::cout << "✓ Image resized to 256x256" << std::endl;
+
+        // Convert to CHW float [-1,1] in RGB order (model trained on RGB)
+        std::vector<float> image_data = imageToTensor(cover);
+        std::cout << "✓ Image normalized to [-1, 1] (RGB, CHW)" << std::endl;
+
+        // All-zeros secret (100 bits)
         std::vector<float> secret_data(100, 0.0f);
+        std::vector<int64_t> image_shape = {1, 3, 256, 256};
         std::vector<int64_t> secret_shape = {1, 100};
 
         Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-
         Ort::Value image_tensor = Ort::Value::CreateTensor<float>(
             memory_info, image_data.data(), image_data.size(),
-            image_shape.data(), image_shape.size()
-        );
-
+            image_shape.data(), image_shape.size());
         Ort::Value secret_tensor = Ort::Value::CreateTensor<float>(
             memory_info, secret_data.data(), secret_data.size(),
-            secret_shape.data(), secret_shape.size()
-        );
+            secret_shape.data(), secret_shape.size());
 
-        auto input_name_0 = session.GetInputNameAllocated(0, allocator);
-        auto input_name_1 = session.GetInputNameAllocated(1, allocator);
-        auto output_name_0 = session.GetOutputNameAllocated(0, allocator);
+        auto in0 = session.GetInputNameAllocated(0, allocator);
+        auto in1 = session.GetInputNameAllocated(1, allocator);
+        auto out0 = session.GetOutputNameAllocated(0, allocator);
+        const char* input_names[]  = {in0.get(), in1.get()};
+        const char* output_names[] = {out0.get()};
 
-        const char* input_names[] = {input_name_0.get(), input_name_1.get()};
-        const char* output_names[] = {output_name_0.get()};
-
-        std::vector<Ort::Value> input_tensors;
-        input_tensors.push_back(std::move(image_tensor));
-        input_tensors.push_back(std::move(secret_tensor));
+        std::vector<Ort::Value> inputs;
+        inputs.push_back(std::move(image_tensor));
+        inputs.push_back(std::move(secret_tensor));
 
         std::cout << "\nRunning encoder inference..." << std::endl;
-        auto output_tensors = session.Run(
-            Ort::RunOptions{nullptr},
-            input_names,
-            input_tensors.data(),
-            2,
-            output_names,
-            1
-        );
+        auto outputs = session.Run(Ort::RunOptions{nullptr},
+                                   input_names, inputs.data(), 2,
+                                   output_names, 1);
+        std::cout << "✓ Inference completed successfully!" << std::endl;
 
-        std::cout << "? Inference completed successfully!" << std::endl;
+        // Encoder output: raw stego tensor in [-1,1], CHW, RGB
+        const float* stego = outputs[0].GetTensorMutableData<float>();
 
-        // Get output
-        float* output_data = output_tensors[0].GetTensorMutableData<float>();
-        auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-
-        std::cout << "  Output shape: [";
-        for (size_t i = 0; i < output_shape.size(); i++) {
-            std::cout << output_shape[i];
-            if (i < output_shape.size() - 1) std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-
-        // Convert output back to image and save
-        std::cout << "\nConverting output to image..." << std::endl;
-        std::vector<float> output_hwc(256 * 256 * 3);
-
-        // CHW to HWC
-        for (int h = 0; h < 256; h++) {
-            for (int w = 0; w < 256; w++) {
-                int chw_idx_r = 0 * 256 * 256 + h * 256 + w;
-                int chw_idx_g = 1 * 256 * 256 + h * 256 + w;
-                int chw_idx_b = 2 * 256 * 256 + h * 256 + w;
-                int hwc_idx = (h * 256 + w) * 3;
-
-                output_hwc[hwc_idx + 0] = output_data[chw_idx_r];
-                output_hwc[hwc_idx + 1] = output_data[chw_idx_g];
-                output_hwc[hwc_idx + 2] = output_data[chw_idx_b];
-            }
+        // Correct blend:
+        //   residual = clamp(stego, -1, 1) - input_normalized
+        //   residual *= WM_STRENGTH; clamp to [-RESIDUAL_CLAMP, +RESIDUAL_CLAMP]
+        //   final = clamp(original_normalized + residual, -1, 1)
+        //   final_uint8 = (final + 1) * 0.5 * 255
+        const int N = 3 * 256 * 256;
+        std::vector<float> final_chw(N);
+        for (int i = 0; i < N; i++) {
+            float s = std::max(-1.0f, std::min(1.0f, stego[i]));
+            float residual = (s - image_data[i]) * WM_STRENGTH;
+            residual = std::max(-RESIDUAL_CLAMP, std::min(RESIDUAL_CLAMP, residual));
+            float blended = std::max(-1.0f, std::min(1.0f, image_data[i] + residual));
+            final_chw[i] = blended;
         }
 
-        ImageUtils::Image output_img = ImageUtils::denormalizeImage(output_hwc, 256, 256, 3);
+        // Back to HWC uint8
+        ImageUtils::Image output_img = tensorToImage(final_chw.data(), 256, 256, 3);
 
-        // Convert back from BGR to RGB for saving
-        ImageUtils::Image output_rgb = ImageUtils::bgrToRgb(output_img);
-
-        if (ImageUtils::saveImage("output_watermarked.png", output_rgb)) {
-            std::cout << "? Saved watermarked image: output_watermarked.png" << std::endl;
+        if (ImageUtils::saveImage("output_watermarked.png", output_img)) {
+            std::cout << "✓ Saved watermarked image: output_watermarked.png" << std::endl;
+        } else {
+            std::cerr << "✗ Failed to save output_watermarked.png" << std::endl;
         }
 
-
+    // ── DECODER (1 input: watermarked image) ────────────────────────────────
     } else if (session.GetInputCount() == 1) {
-        std::cout << "\n? Detected TrustMark Decoder model" << std::endl;
+        std::cout << "\n✓ Detected TrustMark Decoder model" << std::endl;
 
-        // Resize to 224x224
-        ImageUtils::Image resized_dec = ImageUtils::resizeImage(resized, 224, 224);
-        std::vector<float> normalized_dec = ImageUtils::normalizeImage(resized_dec);
+        // Resize to 224×224 for decoder
+        ImageUtils::Image dec_img = ImageUtils::resizeImage(img, 224, 224);
+        std::vector<float> dec_data = imageToTensor(dec_img);
+        std::cout << "✓ Image resized to 224x224, normalized (RGB, CHW)" << std::endl;
 
-        // Prepare input [1, 3, 224, 224] CHW
         std::vector<int64_t> dec_shape = {1, 3, 224, 224};
-        std::vector<float> dec_data(1 * 3 * 224 * 224);
-
-        for (int h = 0; h < 224; h++) {
-            for (int w = 0; w < 224; w++) {
-                int hwc = (h * 224 + w) * 3;
-                int r = 0 * 224 * 224 + h * 224 + w;
-                int g = 1 * 224 * 224 + h * 224 + w;
-                int b = 2 * 224 * 224 + h * 224 + w;
-                dec_data[r] = normalized_dec[hwc + 0];
-                dec_data[g] = normalized_dec[hwc + 1];
-                dec_data[b] = normalized_dec[hwc + 2];
-            }
-        }
-
         Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         Ort::Value in_tensor = Ort::Value::CreateTensor<float>(
-            mem, dec_data.data(), dec_data.size(), dec_shape.data(), dec_shape.size()
-        );
+            mem, dec_data.data(), dec_data.size(),
+            dec_shape.data(), dec_shape.size());
 
-        auto in_name = session.GetInputNameAllocated(0, allocator);
+        auto in_name  = session.GetInputNameAllocated(0, allocator);
         auto out_name = session.GetOutputNameAllocated(0, allocator);
-        const char* ins[] = {in_name.get()};
+        const char* ins[]  = {in_name.get()};
         const char* outs[] = {out_name.get()};
 
         std::cout << "\nRunning decoder inference..." << std::endl;
         auto out_tensors = session.Run(Ort::RunOptions{nullptr}, ins, &in_tensor, 1, outs, 1);
-        std::cout << "? Inference completed!" << std::endl;
+        std::cout << "✓ Inference completed!" << std::endl;
 
         float* out_data = out_tensors[0].GetTensorMutableData<float>();
         auto out_shape = out_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
-        size_t out_size = out_shape[1];
+        size_t out_size = static_cast<size_t>(out_shape[1]);
 
         std::cout << "  Output: [" << out_shape[0] << ", " << out_size << "]" << std::endl;
         std::cout << "\nDecoded bits: ";
@@ -277,6 +241,6 @@ int main(int argc, char* argv[]) {
         std::cout << std::endl;
     }
 
-    std::cout << "\n? TrustMark WASM completed!" << std::endl;
+    std::cout << "\n✓ TrustMark WASM completed!" << std::endl;
     return 0;
 }
