@@ -65,7 +65,61 @@ It runs with wasmtime/graphtime runtimes, no JavaScript involved.
 ./fetch_models.sh
 ```
 
-### Step 2: Build ONNX Runtime for WASI with WebGPU
+This downloads `.onnx` files (e.g. `encoder_P.onnx`, `decoder_P.onnx`).
+
+### Step 2: Convert Models to ORT Format
+
+The WASM build requires `.ort` format models. **For WebGPU, you need the `with_runtime_opt.ort`
+variants** — see the [WebGPU f16 precision fix](#4-webgpu-f16-precision-fix) below for why.
+
+```bash
+# From the trustmark/cpp directory
+cd onnxruntime-wasi/tools/python
+
+# Convert all models — produces both .ort and .with_runtime_opt.ort variants
+python3.11 convert_onnx_models_to_ort.py \
+  ../../../models \
+  --output_dir ../../../models
+
+# Or generate only the with_runtime_opt.ort files (what WebGPU needs)
+python3.11 convert_onnx_models_to_ort.py \
+  --optimization_style Runtime \
+  ../../../models \
+  --output_dir ../../../models
+```
+
+Output files per model:
+| File | Description |
+|------|-------------|
+| `encoder_P.ort` | Basic ORT format, fixed graph optimizations only |
+| `encoder_P.with_runtime_opt.ort` | ORT format with runtime graph optimizations pre-applied |
+
+**Use `with_runtime_opt.ort` for WebGPU execution.** The plain `.ort` files are sufficient for
+CPU/wasmtime.
+
+### Step 3: Stage TrustMark Sources into onnxruntime-wasi
+
+TrustMark-specific source files live in this repo (`cpp/wasm/`, `cpp/examples/`) and must
+be copied into onnxruntime-wasi before building. `prepare_ort_build.sh` handles this:
+
+```bash
+# From the trustmark/cpp directory
+./prepare_ort_build.sh
+```
+
+This copies:
+| Source (trustmark/cpp/) | Destination (onnxruntime-wasi/onnxruntime/wasm/) |
+|-------------------------|--------------------------------------------------|
+| `wasm/image_utils.cpp` | `image_utils.cpp` |
+| `wasm/image_utils.h` | `image_utils.h` |
+| `wasm/stb_image.h` | `stb_image.h` |
+| `wasm/stb_image_resize2.h` | `stb_image_resize2.h` |
+| `wasm/stb_image_write.h` | `stb_image_write.h` |
+| `examples/trustmark_wasm_image.cpp` | `simple.cpp` (include path adjusted) |
+
+Re-run this script any time you change the entry point or image utilities.
+
+### Step 4: Build ONNX Runtime for WASI with WebGPU
 
 ```bash
 # From the onnxruntime-wasi directory
@@ -105,15 +159,11 @@ Verify it's a component (magic bytes should be `00 61 73 6d 0d 00 01 00`):
 xxd build_wasi/ort-wasi-simd.wasm | head -1
 ```
 
-### Step 3: Prepare the Entry Point
+### Step 5: Verify Entry Point
 
-`onnxruntime/wasm/simple.cpp` is compiled into the WASM binary. It already contains the
-TrustMark encoder/decoder logic. If you need to update it:
-
-```bash
-cp ../examples/trustmark_wasm_image.cpp onnxruntime/wasm/simple.cpp
-# then rebuild
-```
+`onnxruntime/wasm/simple.cpp` is compiled into the WASM binary. It is generated from
+`examples/trustmark_wasm_image.cpp` by `prepare_ort_build.sh` (Step 3). Do not edit
+`simple.cpp` directly — edit `examples/trustmark_wasm_image.cpp` and re-run the script.
 
 **Note**: Do NOT use `try-catch` — the build uses `-fno-exceptions`.
 
@@ -147,7 +197,7 @@ GRAPHTIME=/path/to/graphtime/target/release/graphtime
 WASM=onnxruntime-wasi/build_wasi/ort-wasi-simd.wasm
 
 # Run encoder (embeds watermark into image)
-# NOTE: encoder_P.ort (plain) works fine with WebGPU
+# NOTE: must use with_runtime_opt.ort for both encoder and decoder
 USE_WEBGPU=1 $GRAPHTIME \
   --dir "/models::$(pwd)/models" \
   --dir "/images::$(pwd)/../images" \
@@ -256,12 +306,15 @@ Decoded bits: 101101111001100011111100000001111101111101110000011011011011100011
 **3. Image Utilities**
 - Added `image_utils.cpp` to CMake build
 
-**4. WebGPU f16 precision fix**
+**4. WebGPU f16 precision fix** <a name="4-webgpu-f16-precision-fix"></a>
 - Root cause: plain `.ort` models trigger ORT runtime graph optimization which inserts
-  `InsertedPrecisionFreeCast` f16 Cast nodes; these break WebGPU EP data flow for the decoder
+  `InsertedPrecisionFreeCast` f16 Cast nodes; these break WebGPU EP data flow for **both**
+  encoder and decoder
 - Fix: use `with_runtime_opt.ort` models — graph optimization is pre-applied offline, Cast nodes
   are baked into the model and execute correctly on WebGPU
 - `encoder_P.with_runtime_opt.ort` + `decoder_P.with_runtime_opt.ort` → 0 bit-flip errors
+- Using `encoder_P.ort` (plain) on WebGPU produces ~39 bit-flip errors (corrupt watermark)
+- Generated via `convert_onnx_models_to_ort.py --optimization_style Runtime` (see Step 2)
 - `onnxruntime/core/platform/posix/env.cc`: added `#ifdef __wasi__` in `GetSelfPid()` to avoid
   `env::getpid` WASM import (blocks `wasm-tools component new`)
 - `onnxruntime/core/common/logging/logging.cc`: added `#ifdef __wasi__` before `__wasm__` in
@@ -285,10 +338,10 @@ Host System
 │   └── wgpu (WebGPU implementation via wasi:webgpu WIT)
 │
 └── ort-wasi-simd.wasm  (WASM component)
-    ├── TrustMark logic (simple.cpp)
+    ├── TrustMark logic (simple.cpp ← examples/trustmark_wasm_image.cpp)
     ├── ONNX Runtime (WebGPU EP + CPU fallback)
     ├── MLAS SIMD kernels
-    └── Image utilities (stb)
+    └── Image utilities (stb ← wasm/image_utils.cpp)
 ```
 
 ## Key Repositories
@@ -300,6 +353,35 @@ Host System
 | `cdmurph32/wasi-gfx-runtime` | wasi-webgpu wasmtime host impl |
 | `cdmurph32/wasi-webgpu-headers` | C bridge (webgpu.h → WIT) |
 | `cdmurph32/graphtime` | WASI runtime with wasi:webgpu |
+
+## Repository Separation
+
+TrustMark-specific files belong in **this repo** (trustmark), not in onnxruntime-wasi.
+`prepare_ort_build.sh` copies them before building — onnxruntime-wasi should not commit them.
+
+### Files to remove from onnxruntime-wasi
+
+These were checked in during development and must be cleaned up:
+
+**`onnxruntime/wasm/` — delete, replaced by `prepare_ort_build.sh` copy:**
+```
+onnxruntime/wasm/simple.cpp
+onnxruntime/wasm/image_utils.cpp
+onnxruntime/wasm/image_utils.h
+onnxruntime/wasm/stb_image.h
+onnxruntime/wasm/stb_image_resize2.h
+onnxruntime/wasm/stb_image_write.h
+```
+
+### Source of truth
+
+| File | Canonical location |
+|------|--------------------|
+| `simple.cpp` (entry point) | `trustmark/cpp/examples/trustmark_wasm_image.cpp` |
+| `image_utils.cpp/h` | `trustmark/cpp/wasm/` |
+| `stb_image*.h` | `trustmark/cpp/wasm/` |
+| ONNX Runtime WASI patches | `onnxruntime-wasi` (in git, correct) |
+| WASI build scripts (`build_wasi.sh`) | `onnxruntime-wasi` (in git, correct) |
 
 ## Troubleshooting
 
@@ -317,6 +399,7 @@ Load `.ort` files, not `.onnx`. Convert with:
 cd onnxruntime-wasi/tools/python
 python3.11 convert_onnx_models_to_ort.py ../../../models --output_dir ../../../models
 ```
+For WebGPU, use the `with_runtime_opt.ort` variants (see Step 2).
 
 **`No such file or directory` at runtime**
 Check `--dir` mapping. Guest path (left of `::`) must match what the WASM program passes to `fopen`.
