@@ -40,6 +40,23 @@ Image loadImage(const std::string& filename) {
     return loadImage(filename.c_str());
 }
 
+// Load image from memory buffer
+Image loadImageFromMemory(const uint8_t* data, size_t size) {
+    Image img;
+    int width, height, channels;
+    unsigned char* pixels = stbi_load_from_memory(
+        data, static_cast<int>(size), &width, &height, &channels, 0);
+    if (!pixels) {
+        return img;
+    }
+    img.width = width;
+    img.height = height;
+    img.channels = channels;
+    img.data.assign(pixels, pixels + (width * height * channels));
+    stbi_image_free(pixels);
+    return img;
+}
+
 // Save image to file
 bool saveImage(const char* filename, const Image& img) {
     if (img.empty()) {
@@ -68,6 +85,21 @@ bool saveImage(const char* filename, const Image& img) {
 
 bool saveImage(const std::string& filename, const Image& img) {
     return saveImage(filename.c_str(), img);
+}
+
+// Encode image as PNG into a memory buffer
+bool savePNGToMemory(const Image& img, std::vector<uint8_t>& out) {
+    if (img.empty()) return false;
+    struct Ctx { std::vector<uint8_t>* v; };
+    Ctx ctx = { &out };
+    auto cb = [](void* c, void* data, int size) {
+        auto* ctx = static_cast<Ctx*>(c);
+        const uint8_t* p = static_cast<const uint8_t*>(data);
+        ctx->v->insert(ctx->v->end(), p, p + size);
+    };
+    return stbi_write_png_to_func(cb, &ctx, img.width, img.height,
+                                  img.channels, img.data.data(),
+                                  img.width * img.channels) != 0;
 }
 
 // Resize image

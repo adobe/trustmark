@@ -29,9 +29,15 @@ struct Image {
 Image loadImage(const char* filename);
 Image loadImage(const std::string& filename);
 
+// Load image from memory (e.g. HTTP request body)
+Image loadImageFromMemory(const uint8_t* data, size_t size);
+
 // Save image to file
 bool saveImage(const char* filename, const Image& img);
 bool saveImage(const std::string& filename, const Image& img);
+
+// Encode image as PNG into a memory buffer (for HTTP response body)
+bool savePNGToMemory(const Image& img, std::vector<uint8_t>& out);
 
 // Resize image (bilinear interpolation)
 Image resizeImage(const Image& img, int newWidth, int newHeight);

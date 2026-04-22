@@ -121,6 +121,11 @@ Re-run this script any time you change the entry point or image utilities.
 
 ### Step 4: Build ONNX Runtime for WASI with WebGPU
 
+> **IMPORTANT**: Run Step 3 (`prepare_ort_build.sh`) before this step. If `simple.cpp` is
+> absent when CMake first runs, the `onnxruntime_webassembly` target will not be generated
+> and `make` will fail with "No rule to make target". Fix: stage the files, then re-run
+> `build_wasi.sh` — CMake will reconfigure automatically via `CONFIGURE_DEPENDS`.
+
 ```bash
 # From the onnxruntime-wasi directory
 cd onnxruntime-wasi
