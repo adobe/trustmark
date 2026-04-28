@@ -82,7 +82,8 @@ INCLUDES=(
     "-I$ORT_INCLUDE"
     "-I$WASM_SRC"
     "-I$WASM_SRC/wasi_http"
-    "-I$WEBGPU_HEADERS"
+    "-I$WASM_SRC/wasi_config"
+"-I$WEBGPU_HEADERS"
 )
 
 echo "  Compiling http_handler.cpp..."
@@ -98,6 +99,12 @@ echo "  Compiling image_utils.cpp..."
 echo "  Compiling trustmark_http.c..."
 "$CC" "${BASE_FLAGS[@]}" "${INCLUDES[@]}" -std=c11 -fno-exceptions \
     -c "$WASM_SRC/wasi_http/trustmark_http.c" -o "$BUILD_HTTP/trustmark_http.o"
+
+
+# wasi_config: pre-generated wasi:config/store bindings (checked in)
+echo "  Compiling wasi_config/trustmark_config.c..."
+"$CC" "${BASE_FLAGS[@]}" "-I$WASM_SRC/wasi_config" -std=c11 -fno-exceptions \
+    -c "$WASM_SRC/wasi_config/trustmark_config.c" -o "$BUILD_HTTP/wasi_config.o"
 
 # wasi_abseil_stubs.cc
 echo "  Compiling wasi_abseil_stubs.cc..."
@@ -145,12 +152,14 @@ CORE_WASM="$BUILD_HTTP/trustmark-http-core.wasm"
     "$BUILD_HTTP/http_handler.o" \
     "$BUILD_HTTP/image_utils.o" \
     "$BUILD_HTTP/trustmark_http.o" \
+    "$BUILD_HTTP/wasi_config.o" \
     "$BUILD_HTTP/wasi_abseil_stubs.o" \
     "$BUILD_HTTP/webgpu.o" \
     "$BUILD_HTTP/imports.o" \
     \
     "$WEBGPU_HEADERS/imports_component_type.o" \
     "$WASM_SRC/wasi_http/trustmark_http_component_type.o" \
+    "$WASM_SRC/wasi_config/trustmark_config_component_type.o" \
     \
     "-lwasi-emulated-signal" \
     "-lwasi-emulated-mman" \

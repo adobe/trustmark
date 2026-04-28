@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 build_wasm/
+build_http/
 *.o
 *.a
 *.so

@@ -5,9 +5,8 @@
 //   Body:  image/png or image/jpeg
 //   Response: 200 image/png (watermarked)
 //
-// The ORT session is initialized lazily on the first request. Model path comes
-// from the MODEL_PATH environment variable, falling back to
-// /models/encoder_P.with_runtime_opt.ort.
+// Configuration is read from wasi:config/store (set via host_interfaces.config
+// in .wash/config.yaml). Keys: MODEL_PATH, USE_WEBGPU.
 
 #include <algorithm>
 #include <cstdlib>
@@ -22,6 +21,24 @@
 
 extern "C" {
 #include "wasi_http/trustmark_http.h"
+#include "wasi_config/trustmark_config.h"
+}
+
+// ── wasi:config/store helper ──────────────────────────────────────────────────
+
+// Read a key from wasi:config/store; return empty string if absent or error.
+static std::string config_get(const char* key) {
+    trustmark_config_string_t k;
+    trustmark_config_string_set(&k, key);
+    wasi_config_store_result_option_string_error_t result = {};
+    wasi_config_store_error_t err = {};
+    trustmark_config_option_string_t opt = {};
+    if (wasi_config_store_get(&k, &opt, &err) && opt.is_some) {
+        std::string val(reinterpret_cast<char*>(opt.val.ptr), opt.val.len);
+        trustmark_config_option_string_free(&opt);
+        return val;
+    }
+    return {};
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -60,11 +77,10 @@ static std::unique_ptr<Session> g_session;
 
 static Session& get_session() {
     if (!g_session) {
-        const char* env_path = getenv("MODEL_PATH");
-        std::string model_path = env_path
-            ? env_path
-            : "/models/encoder_P.with_runtime_opt.ort";
-        bool use_webgpu = getenv("USE_WEBGPU") != nullptr;
+        std::string model_path = config_get("MODEL_PATH");
+        if (model_path.empty())
+            model_path = "/models/encoder_P.with_runtime_opt.ort";
+        bool use_webgpu = !config_get("USE_WEBGPU").empty();
         g_session = std::make_unique<Session>(model_path, use_webgpu);
     }
     return *g_session;

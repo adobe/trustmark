@@ -1,0 +1,20 @@
+build:
+  command: "echo using pre-built trustmark-http.wasm"
+  component_path: ../../build_http/trustmark-http.wasm
+
+dev:
+  address: "0.0.0.0:8001"
+  wasi_webgpu: true
+
+  volumes:
+    - host_path: ../../models
+      guest_path: /models
+
+  host_interfaces:
+    - namespace: wasi
+      package: config
+      interfaces: [store]
+      version: 0.2.0-rc.1
+      config:
+        MODEL_PATH: /models/encoder_P.with_runtime_opt.ort
+        USE_WEBGPU: "1"
