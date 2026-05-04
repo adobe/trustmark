@@ -1,0 +1,5 @@
+package trustmark:config@0.1.0;
+
+world trustmark-config {
+  import wasi:config/store@0.2.0-rc.1;
+}

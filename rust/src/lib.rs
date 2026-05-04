@@ -126,6 +126,32 @@ impl Trustmark {
         // the image is always encoded with size 256x256
         let encode_size = 256;
 
+        // Debug: dump image tensor and bits before running encoder
+        {
+            let dbg_img: ort::Value<ort::TensorValueType<f32>> =
+                ModelImage(encode_size, self.variant, img.clone()).try_into()?;
+            let arr = dbg_img.try_extract_tensor::<f32>()?.to_owned();
+            let slice = arr.as_slice().unwrap();
+            eprintln!("RUST ENC DEBUG: image tensor NCHW shape: {:?}", arr.shape());
+            eprintln!(
+                "RUST ENC DEBUG: image tensor first 16 vals: {}",
+                slice.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+        }
+        {
+            let bits_struct = Bits::apply_error_correction_and_schema(watermark.clone(), self.version)?;
+            eprintln!("RUST ENC DEBUG: full bits: {}", bits_struct.clone().into_string());
+            let dbg_bits: ort::Value<ort::TensorValueType<f32>> = bits_struct.into();
+            let arr = dbg_bits.try_extract_tensor::<f32>()?.to_owned();
+            let slice = arr.as_slice().unwrap();
+            eprintln!("RUST ENC DEBUG: bits tensor shape: {:?}", arr.shape());
+            eprintln!(
+                "RUST ENC DEBUG: bits tensor first 32 vals: {}",
+                slice.iter().take(32).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+        }
+
+        // Build inputs for encoder
         let input_img: ort::Value<ort::TensorValueType<f32>> =
             ModelImage(encode_size, self.variant, img.clone()).try_into()?;
         let bits: ort::Value<ort::TensorValueType<f32>> =
@@ -163,7 +189,31 @@ impl Trustmark {
     pub fn decode(&self, img: DynamicImage) -> Result<String, Error> {
         // P variant has a smaller decode size
         let decode_size = if self.variant == Variant::P { 224 } else { 256 };
-
+        // Debug: dump decoder input tensor
+        {
+            let dbg: ort::Value<ort::TensorValueType<f32>> =
+                ModelImage(decode_size, self.variant, img.clone()).try_into()?;
+            let arr = dbg.try_extract_tensor::<f32>()?.to_owned();
+            let shape = arr.shape(); // [1,3,H,W]
+            let slice = arr.as_slice().unwrap();
+            eprintln!("RUST DEC DEBUG: image tensor NCHW shape: {:?}", shape);
+            let hw = (shape[2] * shape[3]) as usize;
+            let c0 = &slice[0..hw.min(slice.len())];
+            let c1 = &slice[hw..(2*hw).min(slice.len())];
+            let c2 = &slice[(2*hw)..(3*hw).min(slice.len())];
+            eprintln!(
+                "RUST DEC DEBUG: C0 first 16: {}",
+                c0.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+            eprintln!(
+                "RUST DEC DEBUG: C1 first 16: {}",
+                c1.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+            eprintln!(
+                "RUST DEC DEBUG: C2 first 16: {}",
+                c2.iter().take(16).map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            );
+        }
         let img: ort::Value<ort::TensorValueType<f32>> =
             ModelImage(decode_size, self.variant, img).try_into()?;
         let outputs = self.decoder.run(ort::inputs![

@@ -1,0 +1,100 @@
+# Build artifacts
+build/
+build_wasm/
+build_http/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+trustmark_example
+trustmark_wasm_example
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+*.cmake
+!CMakeLists.txt
+!cmake/
+
+# Generated config files
+TrustMarkCppConfig.cmake
+TrustMarkCppConfigVersion.cmake
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+
+# Compiled libraries
+libtrustmark_cpp.a
+libtrustmark_cpp.so
+libtrustmark_cpp.dylib
+
+# Output directory (watermarked images)
+output/*.jpg
+output/*.png
+output/*.jpeg
+!output/.gitkeep
+
+# ONNX models (fetched via script)
+models/*.onnx
+models/*.ort
+models/*.config
+!models/.gitkeep
+
+# Dependencies (should be fetched via script)
+onnxruntime/
+third_party/ort/
+
+# Cache directories
+.cache/
+__pycache__/
+*.pyc
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.dSYM/
+*.pdb
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Profiling files
+*.prof
+*.out
+
+# Package manager files
+*.tar.gz
+*.zip
+*.7z
+
+# WebAssembly build artifacts (if added later)
+*.wasm
+*.wasm.map
+*.js.map
+wasm_build/

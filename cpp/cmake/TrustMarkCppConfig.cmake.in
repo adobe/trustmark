@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find dependencies
+find_dependency(onnxruntime REQUIRED)
+find_dependency(OpenCV REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/TrustMarkCppTargets.cmake")
+
+# Set variables
+set(TrustMarkCpp_LIBRARIES trustmark_cpp)
+set(TrustMarkCpp_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/include")

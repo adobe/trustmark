@@ -14,7 +14,7 @@ const VERSION_BITS: u16 = 4;
 
 mod bch;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct Bits(String);
 
 /// Error type for the `bits` module.
@@ -112,6 +112,11 @@ impl Bits {
         let Self(mut s) = self;
         s.truncate(version.data_bits().into());
         s
+    }
+
+    /// Return full 100-bit encoded string (data + ecc + version bits).
+    pub(super) fn into_string(self) -> String {
+        self.0
     }
 
     /// Get the version from the bits.

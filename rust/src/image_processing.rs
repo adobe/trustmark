@@ -84,6 +84,7 @@ impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
             .insert_axis(Axis(3))
             .reversed_axes();
         array.swap_axes(2, 3);
+
         assert_eq!(array.shape(), &[1, 3, size as usize, size as usize]);
         Ok(ort::Value::from_array(&array)?)
     }
