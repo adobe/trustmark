@@ -159,9 +159,20 @@ def read_high_bit_depth_rgba(raw_bytes: bytes) -> Optional[HighBitDepthRGBAImage
             "Reading/writing 16-bit RGBA PNGs requires pypng. Install with: pip install 'trustmark[highbitdepth]'"
         ) from e
 
-    reader = pypng.Reader(bytes=raw_bytes)
-    width, height, rows, info = reader.asDirect()
-    raw = np.array(list(rows), dtype=np.uint16)
+    # Unlike OpenImageIO (which reports decode failures via has_error/return codes, never
+    # a Python exception), pypng raises on malformed input -- e.g. a truncated or corrupt
+    # PNG body that still happens to pass the cheap _png_header sniff above. Caller
+    # contract is "None for anything not applicable here", not "may raise", so any decode
+    # failure here is equivalent to "not a genuine 16-bit RGBA PNG".
+    try:
+        reader = pypng.Reader(bytes=raw_bytes)
+        width, height, rows, info = reader.asDirect()
+        raw = np.array(list(rows), dtype=np.uint16)
+    except Exception:
+        return None
+
+    if info.get("bitdepth") != 16 or info.get("planes") != 4:
+        return None
 
     pixels = raw.reshape(height, width, 4).astype(np.float32) / 65535.0
     return HighBitDepthRGBAImage(pixels=pixels, gamma=info.get("gamma"))
@@ -182,5 +193,5 @@ def write_16bit_rgba_png(pixels: np.ndarray, gamma: Optional[float] = None) -> b
     writer = pypng.Writer(**writer_kwargs)
 
     buffer = io.BytesIO()
-    writer.write(buffer, raw.reshape(height, width * 4))
+    writer.write(buffer, raw.reshape(height, width * 4).tolist())
     return buffer.getvalue()
