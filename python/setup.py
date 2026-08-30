@@ -31,6 +31,9 @@ setup(name='trustmark',
                       'six>=1.9',
                       'einops>=0.4.0'
                       ],
+    extras_require={
+        'highbitdepth': ['OpenImageIO>=2.4', 'pypng>=0.20220715.0'],
+    },
 
     classifiers=[
         'Development Status :: 5 - Production/Stable',

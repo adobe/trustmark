@@ -100,6 +100,14 @@ im_recover = tm.remove_watermark(stego)
 im_recover.save('images/recovered.png')
 ```
 
+### 16-bit PNG support
+
+Watermarking a genuine 16-bit-per-channel PNG through `tm.encode()` loses that extra
+precision, since PIL flattens 16-bit PNGs to 8-bit on load. Use
+`tm.encode_high_bit_depth()` instead to keep full precision in the delivered image —
+see the "16-bit PNG support" section of [`CLAUDE.md`](CLAUDE.md) for details and the
+required `pip install trustmark[highbitdepth]` extra.
+
 ## GPU setup
 
 TrustMark runs well on CPU hardware.  

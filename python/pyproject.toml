@@ -30,7 +30,7 @@ classifiers = [
   "Programming Language :: Python :: 3"
 ]
 
-dependencies = [ 
+dependencies = [
   "omegaconf>=2.1",
   "numpy>=1.20.0,<2.0.0",
   "torch>=2.1.2",
@@ -38,6 +38,12 @@ dependencies = [
   "lightning>=2.0",
   "six>=1.9",
   "einops>=0.4.0"
+]
+
+[project.optional-dependencies]
+highbitdepth = [
+  "OpenImageIO>=2.4",
+  "pypng>=0.20220715.0",
 ]
 
 [build-system]

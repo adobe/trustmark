@@ -132,6 +132,51 @@ tm.encode(
 # returns: PIL image (RGB), same resolution as input
 ```
 
+## 16-bit PNG support
+
+`PIL.Image.open` silently flattens a 16-bit-per-channel PNG to 8-bit on load — no
+error, no signal anything was lost. Since no TrustMark model is trained on more than
+8-bit input anyway, `tm.encode()` alone can never deliver output that's genuinely
+16-bit: the source has already lost its extra precision by the time it reaches PIL.
+
+`encode_high_bit_depth` solves this by reading the true 16-bit pixels directly (never
+through PIL), running the real encoder on a throwaway 8-bit copy, and adding back only
+the watermark's own perturbation onto the untouched full-precision pixels. It operates
+on raw PNG bytes in and out — unlike every other method on this class, it does **not**
+take or return a PIL image, since PIL can't represent the data being preserved.
+
+Requires the optional extra:
+
+```bash
+pip install trustmark[highbitdepth]
+```
+
+```python
+with open('input_16bit.png', 'rb') as f:
+    raw_png_bytes = f.read()
+
+watermarked_bytes = tm.encode_high_bit_depth(raw_png_bytes, secret, MODE='binary')
+
+with open('output_16bit.png', 'wb') as f:
+    f.write(watermarked_bytes)
+```
+
+- Supports plain RGB and RGBA 16-bit-per-channel PNGs only. Anything else (8-bit,
+  grayscale, palette, non-PNG) raises `ValueError` — use `tm.encode()` instead for
+  ordinary 8-bit sources.
+- Raises `ImportError` with an install hint if `raw_png_bytes` is genuinely high-bit-depth
+  but the required codec (`OpenImageIO` for RGB, `pypng` for RGBA) isn't installed.
+- **There is no `decode_high_bit_depth`.** Decode watermarked 16-bit output with the
+  ordinary `tm.decode()`, on the image as loaded (and silently flattened to 8-bit) by
+  PIL — precision loss on read doesn't materially affect watermark *detection*, only
+  the delivered pixel precision on encode, so no separate high-bit-depth decode path
+  is needed:
+
+```python
+stego = Image.open('output_16bit.png').convert('RGB')  # flattened to 8-bit by PIL, that's fine
+secret_out, wm_present, wm_schema = tm.decode(stego, MODE='binary')
+```
+
 ## Watermark removal
 
 Requires `loadRemover=True` (the default) at construction time. Calling
