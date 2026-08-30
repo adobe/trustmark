@@ -15,6 +15,7 @@ import importlib
 
 from omegaconf import OmegaConf
 from .datalayer import DataLayer
+from . import high_bit_depth as hbd
 from PIL import Image
 from torchvision import transforms
 import numpy as np
@@ -505,6 +506,57 @@ class TrustMark():
             stego = self.put_the_image_after_processing(stego, np.asarray(in_cover_image).astype(np.uint8))
 
         return Image.fromarray(stego.astype(np.uint8))
+
+    @torch.no_grad()
+    def _embed_watermark_residual(self, pixels_rgb01, string_secret, MODE='text', WM_STRENGTH=1.0, WM_MERGE='bilinear'):
+        # pixels_rgb01: float32 ndarray (H,W,3), normalized 0..1, full precision.
+        # Returns: float32 ndarray (H,W,3), normalized 0..1 -- the original pixels plus
+        # the watermark's own (8-bit-quantized) perturbation, not re-quantized to 8-bit
+        # itself. Runs the real encoder on a throwaway 8-bit copy since no TrustMark
+        # model is trained on anything higher, then adds back only the encoder's own
+        # effect (its output minus that same 8-bit copy) onto the untouched full-precision
+        # pixels passed in.
+        img8_arr = np.clip(pixels_rgb01 * 255.0 + 0.5, 0, 255).astype(np.uint8)
+        img8 = Image.fromarray(img8_arr, mode='RGB')
+
+        # WM_STRENGTH passes straight through: encode() already multiplies it by 1.25
+        # internally for model_type=='P' -- doing that here too would double-apply it.
+        stego8 = self.encode(img8, string_secret, MODE=MODE, WM_STRENGTH=WM_STRENGTH, WM_MERGE=WM_MERGE)
+
+        residual01 = (np.asarray(stego8, dtype=np.float32) - img8_arr.astype(np.float32)) / 255.0
+        return np.clip(pixels_rgb01 + residual01, 0.0, 1.0).astype(np.float32)
+
+    @torch.no_grad()
+    def encode_high_bit_depth(self, raw_png_bytes, string_secret, MODE='text', WM_STRENGTH=1.0, WM_MERGE='bilinear'):
+        # Watermarks a genuine 16-bit-per-channel PNG (RGB or RGBA) without lossy 8-bit
+        # flattening of the delivered pixels -- PIL.Image.open silently flattens 16-bit
+        # RGB PNGs to 8-bit on load, so encode() alone can't preserve source precision.
+        # Requires the optional 'highbitdepth' extra: pip install trustmark[highbitdepth]
+        #
+        # Inputs
+        #   raw_png_bytes: bytes of a 16-bit-per-channel PNG file (RGB or RGBA)
+        #   string_secret: same as encode()
+        # Outputs: bytes of a 16-bit-per-channel PNG file
+        #
+        # There is no decode_high_bit_depth counterpart -- decode ordinary 8-bit-flattened
+        # PIL images with the existing decode(), since precision loss on read doesn't
+        # materially affect watermark detection, only the delivered pixel precision here.
+        rgb = hbd.read_high_bit_depth_rgb(raw_png_bytes)
+        if rgb is not None:
+            out_pixels = self._embed_watermark_residual(rgb.pixels, string_secret, MODE, WM_STRENGTH, WM_MERGE)
+            return hbd.write_16bit_rgb_png(out_pixels, source=rgb.source)
+
+        rgba = hbd.read_high_bit_depth_rgba(raw_png_bytes)
+        if rgba is not None:
+            rgb_pixels, alpha = rgba.pixels[..., :3], rgba.pixels[..., 3:4]
+            out_rgb = self._embed_watermark_residual(rgb_pixels, string_secret, MODE, WM_STRENGTH, WM_MERGE)
+            out_pixels = np.concatenate([out_rgb, alpha], axis=-1)
+            return hbd.write_16bit_rgba_png(out_pixels, gamma=rgba.gamma)
+
+        raise ValueError(
+            "raw_png_bytes is not a genuine 16-bit-per-channel RGB or RGBA PNG. "
+            "Use TrustMark.encode() for ordinary 8-bit sources instead."
+        )
 
     @torch.no_grad()
     def remove_watermark(self, in_cover_image, WM_STRENGTH=1.0, WM_MERGE='bilinear'):
