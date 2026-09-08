@@ -46,7 +46,7 @@ wm_secret, wm_present, wm_schema = tm.decode(stego, MODE='binary', DETECTFIRST=D
 if wm_present:
   print(f'Extracted secret: {wm_secret} (schema {wm_schema})')
 else:
-  print('No watermark detected')
+  print('No valid watermark decoded')
 
 # psnr (quality, higher is better)
 mse = np.mean(np.square(np.subtract(np.asarray(stego).astype(np.int16), np.asarray(rgb).astype(np.int16))))
@@ -66,7 +66,7 @@ rm_wm_secret, rm_wm_present, rm_wm_schema = tm.decode(im_recover, MODE='binary',
 if rm_wm_present and rm_wm_schema==wm_schema:
   print(f'Extracted secret: {rm_wm_secret} (schema {rm_wm_schema})')
 else:
-   print('No secret after removal')
+   print('No valid secret decoded after removal')
 if (has_alpha):
   im_recover.putalpha(alpha)
 im_recover.save('recovered.png', exif=stego.info.get('exif'), icc_profile=stego.info.get('icc_profile'), dpi=stego.info.get('dpi'))

@@ -40,7 +40,7 @@ fn fetch_models() {
 ///
 /// Models are fetched from a hardcoded CDN URL.
 fn fetch_model(filename: &str) {
-    let root = "https://cc-assets.netlify.app/watermarking/trustmark-models";
+    let root = "https://cai-watermark.adobe.net/watermarking/trustmark-models";
     let model_url = format!("{root}/{filename}",);
     let mut decoder = ureq::get(&model_url)
         .call()

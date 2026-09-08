@@ -26,7 +26,7 @@ from hashlib import md5
 from mmap import mmap, ACCESS_READ
 
 # Content Autenticity Initiative (CAI) Content Delivery Network
-MODEL_REMOTE_HOST = "https://cc-assets.netlify.app/watermarking/trustmark-models/"
+MODEL_REMOTE_HOST = "https://cai-watermark.adobe.net/watermarking/trustmark-models/"
 
 MODEL_CHECKSUMS=dict()
 
@@ -85,7 +85,7 @@ class TrustMark():
         super(TrustMark, self).__init__()
 
         if not device:
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            self.device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
         else:
             self.device = device
 
@@ -425,7 +425,7 @@ class TrustMark():
                     return '', False, -1
                for bbox in boxes_pred:
                     # bbox is normalized [x1, y1, x2, y2]
-                    w, h = rotated_cover
+                    w, h = rotated_cover.size
                     x1 = int(bbox[0] * w)
                     y1 = int(bbox[1] * h)
                     x2 = int(bbox[2] * w)

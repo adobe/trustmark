@@ -8,7 +8,7 @@
  */ 
 
 // Source for ONNX model binaries
-const MODEL_BASE_URL = "https://cc-assets.netlify.app/watermarking/trustmark-models/";
+const MODEL_BASE_URL = "https://cai-watermark.adobe.net/watermarking/trustmark-models/";
 
 // List all watermark models for decoding
 const modelConfigs = [

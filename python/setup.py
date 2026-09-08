@@ -11,7 +11,7 @@ with open("README.md", "r") as f:
     long_description = f.read()
 
 setup(name='trustmark',
-    version='0.10.0',
+    version='0.9.2',
     python_requires='>=3.8.5',
     description='High fidelty image watermarking for the Content Authenticity Initiative (CAI)',
     url='https://github.com/adobe/trustmark',
@@ -24,9 +24,9 @@ setup(name='trustmark',
     package_data={'trustmark': ['**/*.yaml','**/*.ckpt','**/*.md']},
     include_package_data = True,
     install_requires=['omegaconf>=2.1',
-                      'numpy>=1.20.0,<3.0.0',
-                      'torch>=2.1.2',
-                      'torchvision>=0.16.2',
+                      'numpy>=1.20.0',
+                      'torch>=2.3.1',
+                      'torchvision>=0.18.1',
                       'lightning>=2.0',
                       'six>=1.9',
                       'einops>=0.4.0'

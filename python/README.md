@@ -19,12 +19,16 @@ This repository contains the following directories:
 - `/rust`: Rust implementation of TrustMark. for more information, see [TrustMark — Rust implementation](rust/README.md).
 - `/c2pa`: Python example of how to indicate the presence of a TrustMark watermark in a C2PA manifest. For more information, see [Using TrustMark with C2PA](c2pa/README.md).
 
-Model files (**ckpt** PyTorch file for Python and **onnx** ONNX file for JavaScript) are not packaged in this repository due to their size, but are downloaded upon first use.  See the code for [URLs and md5 hashes](https://github.com/adobe/trustmark/blob/4ef0dde4abd84d1c6873e7c5024482f849db2c73/python/trustmark/trustmark.py#L30) for a direct download link.
+Model files (**ckpt** PyTorch file for Python and **onnx** ONNX file for JavaScript) are not packaged in this repository due to their size, but are downloaded upon first use.  See the code for [URLs and md5 hashes](https://github.com/adobe/trustmark/blob/010a8f3bf885eec6f2aaa418380afc41d68bb3e5/python/trustmark/trustmark.py#L29) for a direct download link.  Note that the location path was updated from Netlify to S3 in April 2026.
 
 More information:
 
 - For answers to common questions, see the [FAQ](FAQ.md).
 - For information on configuring TrustMark in Python, see [Configuring TrustMark](python/CONFIG.md).
+
+### Changelog
+
+For a history of notable changes to the Python implementation, see the [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 
@@ -49,7 +53,7 @@ pip install .
 
 ## Quickstart
 
-To get started quickly, run the `python/test.py` script that provides examples of watermarking several 
+To get started quickly, run the `python/test-decode.py` script that provides examples of watermarking several 
 image files from the `images` directory. 
 
 ### Run the example
@@ -58,7 +62,7 @@ Run the example as follows:
 
 ```sh
 cd trustmark/python
-python test.py
+python test-decode.py
 ```
 
 You'll see output like this:
@@ -72,7 +76,7 @@ No secret after removal
 
 ### Example script
 
-The `python/test.py` script provides examples of watermarking a JPEG photo, a JPEG GenAI image, and an RGBA PNG image. The example uses TrustMark variant Q to encode the word `mysecret` in ASCII7 encoding into the image `ufo_240.jpg` which is then decoded, and then removed from the image.
+The `python/test-decode.py` script provides examples of watermarking a JPEG photo, a JPEG GenAI image, and an RGBA PNG image. The example uses TrustMark variant Q to encode the word `mysecret` in ASCII7 encoding into the image `ufo_240.jpg` which is then decoded, and then removed from the image.
 
 ```python
 from trustmark import TrustMark
@@ -92,29 +96,13 @@ wm_secret, wm_present, wm_schema = tm.decode(cover)
 if wm_present:
    print(f'Extracted secret: {wm_secret}')
 else:
-   print('No watermark detected')
+   print('No watermark decoded')
 
 # removal example
 stego = Image.open('images/ufo_240_Q.png').convert('RGB')
 im_recover = tm.remove_watermark(stego)
 im_recover.save('images/recovered.png')
 ```
-
-## GPU setup
-
-TrustMark runs well on CPU hardware.  
-
-To leverage GPU compute for the PyTorch implementation on Ubuntu Linux, first install Conda, then use the following commands to install:
-
-```sh
-conda create --name trustmark python=3.10
-conda activate trustmark
-conda install pytorch cudatoolkit=12.8 -c pytorch -c conda-forge
-pip install torch==2.1.2 torchvision==0.16.2 -f https://download.pytorch.org/whl/torch_stable.html
-pip install .
-```
-
-For the JavaScript implementation, a Chromium browser automatically uses WebGPU, if available.
 
 ## Data schema
 
@@ -156,4 +144,4 @@ month = nov
 
 ## License 
 
-This package is is distributed under the terms of the [MIT license](https://github.com/adobe/trustmark/blob/main/LICENSE).
+This package is is distributed under the terms of the [MIT license](https://github.com/adobe/trustmark/blob/main/LICENSE). The MIT license covers both the code in this repo and the model files which are downloaded upon first use.
