@@ -57,6 +57,20 @@ watermarked = tm.encode(cover, secret_text, MODE='text')
 wm_secret, wm_present, wm_schema = tm.decode(watermarked, MODE='text')
 ```
 
+## Device selection
+
+By default `TrustMark` auto-selects a device: `cuda` if available, else `mps` (Apple
+Silicon GPU), else `cpu`. Override explicitly via the `device` constructor argument:
+
+```python
+tm = TrustMark(model_type='Q', device='mps')   # or 'cuda', 'cpu'
+```
+
+MPS requires `torch>=2.3.1` and `torchvision>=0.18.1` (the package's declared minimum
+versions) for full operator coverage — e.g. `torchvision.ops.nms`, used by the bounding
+box detector (`loadBBoxDetector=True`), is not implemented for MPS on earlier
+torchvision releases and raises `NotImplementedError`.
+
 ## Model loading — what gets downloaded and when
 
 On first use, model weights are fetched from Adobe's CDN and cached locally inside the
@@ -67,6 +81,36 @@ package directory. Three separate models exist; not all are needed for every use
 | Encoder + Decoder | always loaded | `encode`, `decode` | moderate |
 | Remover | `loadRemover=True` (default) | `remove_watermark` | large |
 | BBox detector | `loadBBoxDetector=False` (default) | `decode(..., DETECTFIRST=True)` | large |
+
+### Downloading models manually
+
+If automatic download fails (no network access at runtime, corporate proxy, air-gapped
+deployment), fetch the files yourself and place them in the package's `models/`
+directory — for an editable install from this repo, that's `python/trustmark/models/`.
+
+Each `model_type` (`C`, `Q`, `B`, or `P`) needs a subset of these files, named
+`{name}_{TYPE}.{ext}`:
+
+| File pattern | Purpose | Needed for |
+|---|---|---|
+| `trustmark_{TYPE}.yaml` | encoder/decoder config | always |
+| `decoder_{TYPE}.ckpt` | decoder weights | always |
+| `encoder_{TYPE}.ckpt` | encoder weights | always |
+| `trustmark_rm_{TYPE}.yaml`, `trustmark_rm_{TYPE}.ckpt` | remover config/weights | `loadRemover=True` (default) |
+| `trustmark_bbox_{TYPE}.yaml`, `trustmark_bbox_{TYPE}.ckpt` | bbox detector config/weights | `loadBBoxDetector=True`; **only published for `Q` and `P`** |
+
+Download each file from `https://cai-watermark.adobe.net/watermarking/trustmark-models/<filename>`, e.g.:
+
+```sh
+curl -o python/trustmark/models/trustmark_Q.yaml https://cai-watermark.adobe.net/watermarking/trustmark-models/trustmark_Q.yaml
+curl -o python/trustmark/models/decoder_Q.ckpt   https://cai-watermark.adobe.net/watermarking/trustmark-models/decoder_Q.ckpt
+curl -o python/trustmark/models/encoder_Q.ckpt   https://cai-watermark.adobe.net/watermarking/trustmark-models/encoder_Q.ckpt
+```
+
+TrustMark verifies each file's MD5 against a hardcoded checksum (`MODEL_CHECKSUMS` in
+`trustmark/trustmark.py`) before using it; a mismatch is treated as a missing file and
+triggers an automatic re-download. A manually placed file must match that checksum
+exactly — no partial downloads or re-hosted mirrors with different content.
 
 **Skip the remover download** if you only need to embed or verify watermarks:
 

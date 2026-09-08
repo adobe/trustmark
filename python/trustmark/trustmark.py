@@ -85,7 +85,7 @@ class TrustMark():
         super(TrustMark, self).__init__()
 
         if not device:
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            self.device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
         else:
             self.device = device
 
