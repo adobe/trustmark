@@ -1,0 +1,43 @@
+[project]
+name = "trustmark-hailo"
+version = "0.1.0"
+description = "TrustMark encoder/decoder running on the Hailo-8L NPU (Raspberry Pi 5 AI Kit)"
+readme = "README.md"
+requires-python = ">=3.9"
+
+license = "MIT"
+license-files = ["LICENSE"]
+
+authors = [
+  {name = "John Collomosse", email = "collomos@adobe.com" }
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3"
+]
+
+dependencies = [
+  "numpy<2",
+  "pillow"
+]
+
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["trustmark_hailo*"]
+
+[tool.setuptools.package-data]
+# secret2image_{TYPE}.npz ship in trustmark_hailo/models/ rather than being
+# downloaded on first use (see trustmark_hailo.py's MODEL_CHECKSUMS comment) -
+# without this, setuptools would silently drop them from the built wheel.
+# box_head_{TYPE}.npz is NOT included here - it's ~55MB (vs ~300KB for
+# secret2image), too big to ship in the package; downloaded on first use
+# instead, same as the .hef files.
+trustmark_hailo = ["models/secret2image_*.npz"]
+
+[project.urls]
+Repository = "https://github.com/adobe/trustmark.git"
