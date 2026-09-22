@@ -13,12 +13,13 @@ hardware (or, for CPU-only testing, via onnxruntime) instead of PyTorch.
 needs minimal changes to run against this port. The main differences:
 
 - No watermark remover - only `encode()`/`decode()`/`localize()` (bounding-box detection
-  is supported for variants `Q` and `P`, same as upstream).
-- No PyTorch dependency at all - `numpy` and `pillow` are the only runtime dependencies,
+  is supported for variants `Q` and `P` only).
+- No PyTorch dependency - `numpy` and `pillow` are the only runtime dependencies,
   including for bounding-box detection (see [Limitations](#limitations)).
 - Due to lower precision approximations of the model trained for the NPU, the PSNR is 
   considerably lower e.g. -5 on the encoders.  Please consider running the CPU vs. the NPU encoder
-  unless your use case requires fast encoding.
+  unless your use case requires fast encoding.  Note due to the subtle residual of the P encoder
+  it has been quantized at higher precision when training the NPU model.
 
 Model files are not packaged in this repository due to their size, but are downloaded
 upon first use, same as `../python` does - see [Model loading](#model-loading) below.
@@ -34,7 +35,9 @@ using one (e.g. by symlinking `hailo_platform` into your env's `site-packages`).
 
 ### Installing
 
-After cloning the repository, install from the `python-hailo` directory:
+The repo is available via PyPi, using `pip install trustmark-hailo`.
+
+Or after cloning this repository, install from the `python-hailo` directory:
 
 ```
 cd trustmark/python-hailo
@@ -54,7 +57,7 @@ cd trustmark/python-hailo
 python test.py
 ```
 
-You'll see output like this (note the PSNR drop for the NPU encoder vs the main repo):
+You'll see output like this (note the PSNR on encoding via the NPU is lower than the main PyTorch implementation):
 
 ```
 Initializing TrustMark (Hailo port) model_type='Q' encoder=[npu] decoder=[npu] models_dir=.../trustmark_hailo/models
@@ -93,8 +96,7 @@ detection - see [Limitations](#limitations) for why.
 from trustmark_hailo import TrustMark
 from PIL import Image
 
-# init - encoder_backend/decoder_backend default to 'npu' (except variant P's encoder,
-# which defaults to 'cpu' - see Model variants below)
+# init - encoder_backend/decoder_backend both default to 'npu' for every variant
 tm = TrustMark(model_type='Q', verbose=True)
 
 # encoding example
@@ -118,14 +120,7 @@ tm.close()
 ## Model loading
 
 Similar behavior to `../python`, with one difference: on first use, the larger model
-files are fetched over HTTP and cached (with MD5 verification) in
-`trustmark_hailo/models/`, inside the installed package - see
-`MODEL_REMOTE_HOST`/`MODEL_CHECKSUMS`/`check_and_download()` in
-`trustmark_hailo/trustmark_hailo.py`. `MODEL_REMOTE_HOST` currently points at a local
-test server, not real hosting yet - update it once the compiled models are actually
-published. The small `secret2image_{TYPE}.npz` files (~300KB each, vs multi-MB for
-everything else) are the exception - they ship directly in `trustmark_hailo/models/`
-as package data, not downloaded.
+files are fetched over HTTP and cached (with MD5 verification)
 
 Each `model_type` (`C`, `Q`, `B`, or `P`) needs a subset of these files, named
 `{name}_{TYPE}.{ext}`:
@@ -137,14 +132,15 @@ Each `model_type` (`C`, `Q`, `B`, or `P`) needs a subset of these files, named
 | `encoder_{TYPE}.onnx` | encoder weights (CPU backend) | `encoder_backend='cpu'` | downloaded on first use |
 | `decoder_{TYPE}.hef` | decoder weights (NPU backend) | `decoder_backend='npu'` | downloaded on first use |
 | `decoder_{TYPE}.onnx` | decoder weights (CPU backend) | `decoder_backend='cpu'` | downloaded on first use |
-| `bbox_trunk_{TYPE}.hef` | bbox detector backbone+RPN weights (NPU) | `loadBBoxDetector=True` (`Q` only) | downloaded on first use |
-| `box_head_{TYPE}.npz` | bbox detector weights (small CPU-side piece) | `loadBBoxDetector=True` (`Q` only) | downloaded on first use |
+| `bbox_trunk_{TYPE}.hef` | bbox detector backbone+RPN weights (NPU) | `loadBBoxDetector=True` (`Q`/`P` only) | downloaded on first use |
+| `box_head_{TYPE}.npz` | bbox detector weights (small CPU-side piece) | `loadBBoxDetector=True` (`Q`/`P` only) | downloaded on first use |
 
 ## Model variants
 
 | `model_type` | Character | Trade-off |
 |---|---|---|
 | `'Q'` | Balanced (default) | Good quality and robustness |
+| `'P'` | High visual quality | Best PSNR, forces centre-square crop. |
 | `'B'` | Base | Original paper model |
 | `'C'` | Compact decoder | Smaller decoder model |
 
@@ -169,7 +165,9 @@ tm.decode(
 
 ## Bounding-box detection
 
-Supported for variant `Q` only. Requires `loadBBoxDetector=True at construction time:
+Supported for variants `Q` and `P` only (matching upstream - the bbox detector's
+trained weights are only published for these two). Requires `loadBBoxDetector=True`
+at construction time:
 
 ```python
 tm = TrustMark(model_type='Q', loadBBoxDetector=True)
@@ -196,6 +194,11 @@ tm.encode(
 )
 # returns: PIL image (RGB), same resolution as input
 ```
+
+## Citation
+
+Same underlying method as `../python` - see that directory's README for the paper and
+citation.
 
 ## License
 
