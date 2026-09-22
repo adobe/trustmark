@@ -1,10 +1,10 @@
 # TrustMark (Hailo-8L port)
 
 This is a port of TrustMark's encoder/decoder to run on a Hailo-8L NPU (Raspberry Pi 5
-AI Kit), for real-time watermark detection from a live camera feed. It implements the
-same underlying watermarking method as `../python` - see that directory's README for
+AI Kit). Same underlying watermarking method as `../python` - see that directory's README for
 the paper and citation - but the encoder/decoder neural networks run on Hailo-8L
-hardware (or, for CPU-only testing, via onnxruntime) instead of PyTorch.
+hardware (or, for CPU-only testing, via onnxruntime) instead of PyTorch. To achieve this the
+models have been quantized to INT8.
 
 ## Overview
 
