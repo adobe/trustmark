@@ -14,8 +14,7 @@ needs minimal changes to run against this port. The main differences:
 
 - No watermark remover - only `encode()`/`decode()`/`localize()` (bounding-box detection
   is supported for variants `Q` and `P` only).
-- No PyTorch dependency - `numpy` and `pillow` are the only runtime dependencies,
-  including for bounding-box detection (see [Limitations](#limitations)).
+- No PyTorch dependency - `numpy` and `pillow` are the only runtime dependencies.
 - Due to lower precision approximations of the model trained for the NPU, the PSNR is 
   considerably lower e.g. -5 on the encoders.  Please consider running the CPU vs. the NPU encoder
   unless your use case requires fast encoding.  Note due to the subtle residual of the P encoder
@@ -25,15 +24,6 @@ Model files are not packaged in this repository due to their size, but are downl
 upon first use, same as `../python` does - see [Model loading](#model-loading) below.
 
 ## Installation
-
-### Prerequisite
-
-You must have Python 3.9 or higher. On the Raspberry Pi 5, the NPU backend also needs
-HailoRT's Python bindings (`sudo apt install hailo-all`), which install into the system
-Python - not into a virtualenv/conda env - so make that visible to your env if you're
-using one (e.g. by symlinking `hailo_platform` into your env's `site-packages`).
-
-### Installing
 
 The repo is available via PyPi, using `pip install trustmark-hailo`.
 
@@ -86,9 +76,6 @@ python3-opencv`, then make them visible to your env the same way as
 ```sh
 python test-camera.py
 ```
-
-Press `q` in the preview window to quit. Expect roughly 0.5-0.7 fps for
-detection - see [Limitations](#limitations) for why.
 
 ### Example script
 
@@ -149,56 +136,6 @@ Each `model_type` (`C`, `Q`, `B`, or `P`) needs a subset of these files, named
 Same 100-bit payload and BCH error-correction schema as `../python` - see that
 directory's README for details. Always call `tm.schemaCapacity()` to get the exact
 capacity for the chosen encoding; don't hardcode it.
-
-## decode options
-
-```python
-tm.decode(
-    img,
-    MODE='binary',        # 'binary' (bit string) or 'text' (7-bit ASCII string)
-    DETECTFIRST=False,    # True = run bbox detector first (requires loadBBoxDetector=True); Q/P only
-    ROTATION=False,        # True = try 0/90/180/270 rotations - combines with DETECTFIRST, same as upstream
-)
-# returns: (secret_string, wm_present: bool, wm_schema: int)
-# wm_present=False -> no watermark detected; secret_string will be ''
-```
-
-## Bounding-box detection
-
-Supported for variants `Q` and `P` only (matching upstream - the bbox detector's
-trained weights are only published for these two). Requires `loadBBoxDetector=True`
-at construction time:
-
-```python
-tm = TrustMark(model_type='Q', loadBBoxDetector=True)
-
-# locate a watermarked region before decoding (e.g. a cropped/composited image)
-wm_secret, wm_present, wm_schema = tm.decode(img, MODE='binary', DETECTFIRST=True)
-
-# or call the detector directly
-box = tm.localize(img)               # top detection, normalized [x1,y1,x2,y2] in [0,1], or None
-boxes = tm.localize(img, return_all=True)  # all detections
-```
-
-No confidence threshold is applied - matches upstream, which returns the top-scoring
-detection unconditionally whenever the detector produces any box at all.
-
-## encode options
-
-```python
-tm.encode(
-    cover_image,          # PIL image, any resolution
-    string_secret,        # bit string (MODE='binary') or 7-bit ASCII string (MODE='text')
-    MODE='binary',
-    WM_STRENGTH=1.0,       # increase for stronger watermark, at cost of visual quality
-)
-# returns: PIL image (RGB), same resolution as input
-```
-
-## Citation
-
-Same underlying method as `../python` - see that directory's README for the paper and
-citation.
 
 ## License
 
