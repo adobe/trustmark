@@ -15,6 +15,7 @@ and later published at [ICCV 2025](https://iccv.thecvf.com/virtual/2025/poster/1
 This repository contains the following directories:
 
 - `/python`: Python implementation of TrustMark for encoding, decoding and removing image watermarks (using PyTorch). For information on configuring TrustMark in Python, see [Configuring TrustMark](python/CONFIG.md). 
+- `/python-hailo`: Python implementation of TrustMark for HAILO-8L NPU (Raspberry Pi AI Kit). For information on use, see [Configuring TrustMark](python-hailo/CONFIG.md). 
 - `/js`: Javascript implementation of TrustMark decoding of image watermarks (using ONNX).  For more information, see [TrustMark - JavaScript implementation](js/README.md).
 - `/rust`: Rust implementation of TrustMark. for more information, see [TrustMark — Rust implementation](rust/README.md).
 - `/c2pa`: Python example of how to indicate the presence of a TrustMark watermark in a C2PA manifest. For more information, see [Using TrustMark with C2PA](c2pa/README.md).
