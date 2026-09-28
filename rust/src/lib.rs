@@ -41,10 +41,13 @@
 //! let output = tm.encode("0010101".to_owned(), input, 0.95);
 //! # }
 //! ```
-use std::path::Path;
+use std::{path::Path, sync::Mutex};
 
 use image::{DynamicImage, GenericImageView as _};
-use ort::{GraphOptimizationLevel, Session};
+use ort::{
+    session::{builder::GraphOptimizationLevel, Session},
+    value::{TensorValueType, Value},
+};
 
 use self::{bits::Bits, image_processing::ModelImage};
 
@@ -54,8 +57,8 @@ mod model;
 
 /// A loaded Trustmark model.
 pub struct Trustmark {
-    encoder: Session,
-    decoder: Session,
+    encoder: Mutex<Session>,
+    decoder: Mutex<Session>,
     version: Version,
     variant: Variant,
 }
@@ -72,6 +75,8 @@ pub enum Error {
     Bits(bits::Error),
     #[error("invalid model variant")]
     InvalidModelVariant,
+    #[error("ONNX session lock is poisoned")]
+    SessionLockPoisoned,
 }
 
 impl From<bits::Error> for Error {
@@ -94,16 +99,20 @@ impl Trustmark {
         version: Version,
     ) -> Result<Self, Error> {
         let encoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(8)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(ort::Error::from)?
+            .with_intra_threads(8)
+            .map_err(ort::Error::from)?
             .commit_from_file(models.as_ref().join(variant.encoder_filename()))?;
         let decoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(8)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(ort::Error::from)?
+            .with_intra_threads(8)
+            .map_err(ort::Error::from)?
             .commit_from_file(models.as_ref().join(variant.decoder_filename()))?;
         Ok(Self {
-            encoder,
-            decoder,
+            encoder: Mutex::new(encoder),
+            decoder: Mutex::new(decoder),
             version,
             variant,
         })
@@ -126,21 +135,27 @@ impl Trustmark {
         // the image is always encoded with size 256x256
         let encode_size = 256;
 
-        let input_img: ort::Value<ort::TensorValueType<f32>> =
+        let input_img: Value<TensorValueType<f32>> =
             ModelImage(encode_size, self.variant, img.clone()).try_into()?;
-        let bits: ort::Value<ort::TensorValueType<f32>> =
+        let bits: Value<TensorValueType<f32>> =
             Bits::apply_error_correction_and_schema(watermark, self.version)?.into();
-        let outputs = self.encoder.run(ort::inputs![
-            "onnx::Concat_0" => input_img,
-            "onnx::Gemm_1" => bits,
-        ]?)?;
-        let output_img = outputs["image"].try_extract_tensor::<f32>()?.to_owned();
+        let output_img = {
+            let mut encoder = self
+                .encoder
+                .lock()
+                .map_err(|_| Error::SessionLockPoisoned)?;
+            let outputs = encoder.run(ort::inputs![
+                "onnx::Concat_0" => input_img,
+                "onnx::Gemm_1" => bits,
+            ])?;
+            outputs["image"].try_extract_array::<f32>()?.to_owned()
+        };
 
         // Need to calculate and apply the residual.
-        let input_img: ort::Value<ort::TensorValueType<f32>> =
+        let input_img: Value<TensorValueType<f32>> =
             ModelImage(encode_size, self.variant, img.clone()).try_into()?;
         let residual = (self.variant.strength_multiplier() * strength)
-            * (output_img - input_img.try_extract_tensor::<f32>()?);
+            * (output_img - input_img.try_extract_array::<f32>()?);
 
         // Residual should be small perturbations.
         let mut residual = residual.clamp(-0.2, 0.2);
@@ -164,12 +179,18 @@ impl Trustmark {
         // P variant has a smaller decode size
         let decode_size = if self.variant == Variant::P { 224 } else { 256 };
 
-        let img: ort::Value<ort::TensorValueType<f32>> =
+        let img: Value<TensorValueType<f32>> =
             ModelImage(decode_size, self.variant, img).try_into()?;
-        let outputs = self.decoder.run(ort::inputs![
-            "image" => img,
-        ]?)?;
-        let watermark = outputs["output"].try_extract_tensor::<f32>()?.to_owned();
+        let watermark = {
+            let mut decoder = self
+                .decoder
+                .lock()
+                .map_err(|_| Error::SessionLockPoisoned)?;
+            let outputs = decoder.run(ort::inputs![
+                "image" => img,
+            ])?;
+            outputs["output"].try_extract_array::<f32>()?.to_owned()
+        };
         let watermark: Bits = watermark.try_into()?;
         Ok(watermark.get_data())
     }

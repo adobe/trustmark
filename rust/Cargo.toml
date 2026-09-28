@@ -7,7 +7,7 @@ authors = [
   "Maurice Fisher <mfisher@adobe.com>",
   "Andrew Halle <ahalle@adobe.com>",
 ]
-rust-version = "1.75.0"
+rust-version = "1.88.0"
 edition = "2021"
 license = "MIT"
 keywords = ["trustmark", "cv", "watermark"]
@@ -28,9 +28,9 @@ harness = false
 [dependencies]
 image = "0.25.6"
 fast_image_resize = { version = "5.1.4", features = ["image", "rayon"] }
-ndarray = "0.16"
-ort = "=2.0.0-rc.8"
-ort-sys = { version = "=2.0.0-rc.8", default-features = false }
+ndarray = "0.17"
+ort = "=2.0.0-rc.12"
+ort-sys = { version = "=2.0.0-rc.12", default-features = false }
 thiserror = "1"
 
 [dev-dependencies]
