@@ -19,7 +19,7 @@ This repository contains the following directories:
 - `/rust`: Rust implementation of TrustMark. for more information, see [TrustMark — Rust implementation](rust/README.md).
 - `/c2pa`: Python example of how to indicate the presence of a TrustMark watermark in a C2PA manifest. For more information, see [Using TrustMark with C2PA](c2pa/README.md).
 
-Model files (**ckpt** PyTorch file for Python and **onnx** ONNX file for JavaScript) are not packaged in this repository due to their size, but are downloaded upon first use.  See the code for [URLs and md5 hashes](https://github.com/adobe/trustmark/blob/010a8f3bf885eec6f2aaa418380afc41d68bb3e5/python/trustmark/trustmark.py#L29) for a direct download link.  Note that the location path was updated from Netlify to S3 in April 2026.
+Model files (**ckpt** PyTorch files for Python and **onnx** ONNX files for JavaScript and Rust) are not packaged in this repository due to their size. See the [Rust instructions](rust/README.md#download-models) to fetch models for the Rust implementation. For Python model URLs and hashes, see [the Python implementation](https://github.com/adobe/trustmark/blob/010a8f3bf885eec6f2aaa418380afc41d68bb3e5/python/trustmark/trustmark.py#L29); its download location was updated from Netlify to S3 in April 2026.
 
 More information:
 

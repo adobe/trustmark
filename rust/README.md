@@ -18,7 +18,7 @@ Open an issue if there's something in the Python version that want added to this
 
 ## Platform Support
 
-This crate uses the [ort](https://ort.pyke.io) crate as an ONNX runtime. As such, it can only be used on platforms supported by that crate. See [the documentation](https://ort.pyke.io/setup/platforms) for supported platforms.
+Building this crate requires Rust 1.88 or newer. TrustMark 0.3.0 uses [ort](https://ort.pyke.io) 2.0.0-rc.12 as its ONNX runtime, so it can only be used on platforms supported by that crate. See [the documentation](https://ort.pyke.io/setup/platforms) for supported platforms.
 
 In particular, the ONNX runtime requires either:
 
@@ -61,6 +61,8 @@ Add `trustmark` to your project's `cargo` manifest with:
 cargo add trustmark
 ```
 
+This installs the version available on crates.io; TrustMark 0.3.0 contains the ORT rc.12 upgrade.
+
 A basic example of using `trustmark` is:
 
 ```rust
@@ -70,6 +72,8 @@ let tm = Trustmark::new("./models", Variant::Q, Version::Bch5).unwrap();
 let input = image::open("../images/ghost.png").unwrap();
 let output = tm.encode("0010101".to_owned(), input, 0.95);
 ```
+
+`encode` and `decode` take `&self`, so a loaded model can be shared between callers. Inference on the same encoder or decoder session is serialized; encoding and decoding use separate sessions and can run concurrently.
 
 ## Running the benchmarks
 
