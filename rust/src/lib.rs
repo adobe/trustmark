@@ -210,8 +210,11 @@ mod tests {
         let input = image::open(path.as_ref()).unwrap();
         let watermark = "1011011110011000111111000000011111011111011100000110110110111".to_owned();
         let encoded = tm.encode(watermark.clone(), input, 0.95).unwrap();
-        encoded.to_rgba8().save("./test.png").unwrap();
-        let input = image::open("./test.png").unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(encoded.to_rgba8())
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let input = image::load_from_memory(png.get_ref()).unwrap();
         let decoded = tm.decode(input).unwrap();
         assert_eq!(watermark, decoded);
     }
@@ -224,5 +227,36 @@ mod tests {
     #[test]
     fn roundtrip_ufo() {
         roundtrip("../images/ufo_240.jpg");
+    }
+
+    #[test]
+    fn shared_model_roundtrips_on_multiple_threads() {
+        let tm = Trustmark::new("./models", Variant::Q, Version::Bch5).unwrap();
+        let input = image::open("../images/ghost.png").unwrap();
+        let start = std::sync::Barrier::new(2);
+        let watermarks = [
+            "1011011110011000111111000000011111011111011100000110110110111",
+            "0011011110011000111111000000011111011111011100000110110110111",
+        ];
+
+        std::thread::scope(|scope| {
+            let handles = watermarks.map(|watermark| {
+                let input = input.clone();
+                let tm = &tm;
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    let encoded = tm.encode(watermark.to_owned(), input, 0.95).unwrap();
+                    let decoded = tm
+                        .decode(DynamicImage::ImageRgba8(encoded.to_rgba8()))
+                        .unwrap();
+                    assert_eq!(decoded, watermark);
+                })
+            });
+
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        });
     }
 }
