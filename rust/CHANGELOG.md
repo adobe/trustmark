@@ -6,6 +6,11 @@ crate is versioned independently of the Python package in this repository.
 Entries for releases before 0.3.0 were reconstructed from the commit history,
 since those versions were published manually and without tags.
 
+## 0.4.0
+
+- Downgrade `ort` to 2.0.0-rc.10 to restore support for Intel macOS.
+- Downgrade `ndarray` to 0.16 to match the version used by `ort` 2.0.0-rc.10.
+
 ## 0.3.0
 
 - Upgrade `ort` to 2.0.0-rc.12. This is the fix for 0.2.2 no longer being

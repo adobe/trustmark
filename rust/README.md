@@ -18,7 +18,7 @@ Open an issue if there's something in the Python version that want added to this
 
 ## Platform Support
 
-Building this crate requires Rust 1.88 or newer. TrustMark 0.3.0 uses [ort](https://ort.pyke.io) 2.0.0-rc.12 as its ONNX runtime, so it can only be used on platforms supported by that crate. See [the documentation](https://ort.pyke.io/setup/platforms) for supported platforms.
+Building this crate requires Rust 1.88 or newer. TrustMark 0.4.0 uses [ort](https://ort.pyke.io) 2.0.0-rc.10 as its ONNX runtime, so it can only be used on platforms supported by that crate. See [the documentation](https://ort.pyke.io/setup/platforms) for supported platforms.
 
 In particular, the ONNX runtime requires either:
 
@@ -61,7 +61,7 @@ Add `trustmark` to your project's `cargo` manifest with:
 cargo add trustmark
 ```
 
-This installs the version available on crates.io; TrustMark 0.3.0 contains the ORT rc.12 upgrade.
+This installs the version available on crates.io; TrustMark 0.4.0 contains the ORT rc.10 change.
 
 A basic example of using `trustmark` is:
 
