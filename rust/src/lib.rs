@@ -99,16 +99,12 @@ impl Trustmark {
         version: Version,
     ) -> Result<Self, Error> {
         let encoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort::Error::from)?
-            .with_intra_threads(8)
-            .map_err(ort::Error::from)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(8)?
             .commit_from_file(models.as_ref().join(variant.encoder_filename()))?;
         let decoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort::Error::from)?
-            .with_intra_threads(8)
-            .map_err(ort::Error::from)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(8)?
             .commit_from_file(models.as_ref().join(variant.decoder_filename()))?;
         Ok(Self {
             encoder: Mutex::new(encoder),
