@@ -10,8 +10,8 @@ name: Rust release
 # You can also run it manually from the Actions tab; use `dry_run: true` to
 # rehearse everything except the actual `cargo publish`.
 #
-# Authentication uses crates.io Trusted Publishing (OIDC) — no API token is
-# stored in this repository. See rust/RELEASING.md for the one-time setup.
+# Authentication uses a crates.io API token stored as the repository secret
+# `CARGO_REGISTRY_TOKEN`. See rust/RELEASING.md for the one-time setup.
 
 on:
   push:
@@ -42,9 +42,19 @@ jobs:
     environment: crates-io
     permissions:
       contents: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check publish credentials are configured
+        if: inputs.dry_run != true
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "::error::The CARGO_REGISTRY_TOKEN secret is not set on the crates-io environment. See rust/RELEASING.md."
+            exit 1
+          fi
+          echo "Publish credentials are present."
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -100,16 +110,11 @@ jobs:
       - name: Package
         run: cargo publish --dry-run --locked
 
-      - name: Authenticate to crates.io
-        if: inputs.dry_run != true
-        uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-
       - name: Publish
         if: inputs.dry_run != true
         run: cargo publish --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Create GitHub release
         if: github.ref_type == 'tag' && inputs.dry_run != true
