@@ -414,7 +414,7 @@ pub(super) fn bch_decode(ecc_state: &mut EccState, data: &mut [u8], recvecc: &[u
         //     recvecc=recvecc+bytes([0]*(4-leftdata))
         //     w=self.load4bytes(recvecc)
         //     eccbuf.append(w)
-        recvecc.extend(std::iter::repeat(0).take(4 - leftdata));
+        recvecc.extend(std::iter::repeat_n(0, 4 - leftdata));
         let w = u32::from_be_bytes(recvecc.clone().try_into().unwrap());
         eccbuf.push(w);
     }
