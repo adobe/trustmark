@@ -8,7 +8,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use ndarray::{Array1, ArrayD, Axis};
-use ort::{TensorValueType, Value};
+use ort::value::{TensorValueType, Value};
 
 const VERSION_BITS: u16 = 4;
 
@@ -212,7 +212,7 @@ impl Bits {
     }
 }
 
-impl From<Bits> for ort::Value<TensorValueType<f32>> {
+impl From<Bits> for Value<TensorValueType<f32>> {
     fn from(Bits(s): Bits) -> Self {
         let floats: Vec<f32> = s
             .chars()

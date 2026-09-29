@@ -14,7 +14,7 @@ use image::{
     Rgb32FImage, RgbImage, Rgba32FImage, RgbaImage,
 };
 use ndarray::{s, Array, ArrayD, Axis, ShapeError};
-use ort::TensorValueType;
+use ort::value::{TensorValueType, Value};
 
 use crate::Variant;
 
@@ -60,7 +60,7 @@ pub enum Error {
     Resize(#[from] fast_image_resize::ResizeError),
 }
 
-impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
+impl TryFrom<ModelImage> for Value<TensorValueType<f32>> {
     type Error = Error;
 
     fn try_from(ModelImage(size, variant, img): ModelImage) -> Result<Self, Self::Error> {
@@ -85,7 +85,7 @@ impl TryFrom<ModelImage> for ort::Value<TensorValueType<f32>> {
             .reversed_axes();
         array.swap_axes(2, 3);
         assert_eq!(array.shape(), &[1, 3, size as usize, size as usize]);
-        Ok(ort::Value::from_array(&array)?)
+        Ok(Value::from_array(array.to_owned())?)
     }
 }
 
