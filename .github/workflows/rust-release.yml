@@ -1,0 +1,122 @@
+name: Rust release
+
+# Publishes the `trustmark` crate to crates.io.
+#
+# Trigger by pushing a tag of the form `rust-v<version>` (for example
+# `rust-v0.3.0`), where `<version>` matches the `version` field in
+# `rust/Cargo.toml`. The tag prefix keeps Rust releases distinct from the
+# Python package releases that share this repository.
+#
+# You can also run it manually from the Actions tab; use `dry_run: true` to
+# rehearse everything except the actual `cargo publish`.
+#
+# Authentication uses crates.io Trusted Publishing (OIDC) — no API token is
+# stored in this repository. See rust/RELEASING.md for the one-time setup.
+
+on:
+  push:
+    tags:
+      - 'rust-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run every step but skip the actual publish'
+        type: boolean
+        default: true
+
+concurrency:
+  group: rust-release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: rust
+
+jobs:
+  release:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Determine version
+        id: version
+        run: |
+          set -euo pipefail
+          manifest_version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "trustmark"))')
+          echo "Manifest version: $manifest_version"
+
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag_version="${GITHUB_REF_NAME#rust-v}"
+            if [ "$tag_version" != "$manifest_version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME implies version $tag_version but rust/Cargo.toml says $manifest_version."
+              exit 1
+            fi
+          fi
+
+          echo "version=$manifest_version" >> "$GITHUB_OUTPUT"
+
+      - name: Check version is not already published
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          published=$(curl -sSf -H 'User-Agent: adobe/trustmark release workflow' \
+            "https://crates.io/api/v1/crates/trustmark" \
+            | python3 -c 'import json,sys; print("\n".join(v["num"] for v in json.load(sys.stdin)["versions"]))')
+          if echo "$published" | grep -qx "$version"; then
+            echo "::error::trustmark $version is already published on crates.io. Bump the version in rust/Cargo.toml."
+            exit 1
+          fi
+          echo "trustmark $version is not yet published."
+
+      - name: Cache models
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: rust/models
+          key: trustmark-models-${{ hashFiles('rust/crates/xtask/src/main.rs') }}
+
+      - name: Fetch models
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: cargo xtask fetch-models
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Package
+        run: cargo publish --dry-run --locked
+
+      - name: Authenticate to crates.io
+        if: inputs.dry_run != true
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish
+        if: inputs.dry_run != true
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Rust crate ${{ steps.version.outputs.version }}" \
+            --notes "The \`trustmark\` crate ${{ steps.version.outputs.version }} is published at https://crates.io/crates/trustmark/${{ steps.version.outputs.version }}."

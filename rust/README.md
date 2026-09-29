@@ -92,3 +92,14 @@ To run the Python benchmarks, run the following from the workspace root:
 ```
 benches/load.sh && benches/encode.sh
 ```
+
+## Releasing
+
+Changes to this crate are validated by the [Rust CI](../.github/workflows/rust-ci.yml)
+workflow, and releases to crates.io are performed by the
+[Rust release](../.github/workflows/rust-release.yml) workflow when a
+`rust-v*` tag is pushed.
+
+See [RELEASING.md](RELEASING.md) for the full process, including the manual
+fallback and the setup required on crates.io. Notable changes are recorded in
+[CHANGELOG.md](CHANGELOG.md).
