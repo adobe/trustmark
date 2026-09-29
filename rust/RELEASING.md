@@ -41,21 +41,28 @@ with `dry_run` left enabled.
 
 ### One-time crates.io setup
 
-The release workflow authenticates with
-[Trusted Publishing](https://crates.io/docs/trusted-publishing), so no API
-token is stored in this repository. An owner of the `trustmark` crate must
-configure it once, under **Settings → Trusted Publishing** on the crate page:
+The release workflow authenticates with a crates.io API token.
 
-| Field          | Value                |
-| -------------- | -------------------- |
-| Repository     | `adobe/trustmark`    |
-| Workflow file  | `rust-release.yml`   |
-| Environment    | `crates-io`          |
+1. On [crates.io](https://crates.io/settings/tokens), signed in as an account
+   that is an owner of the `trustmark` crate, create a new API token. Scope it
+   to `publish-update` and, if the option is offered, restrict it to the
+   `trustmark` crate so it cannot publish anything else.
+2. In this repository, go to **Settings → Environments** and create an
+   environment named `crates-io`. The release workflow references this
+   environment, which is what lets you require a reviewer before any publish
+   actually runs.
+3. Add the token as a secret named `CARGO_REGISTRY_TOKEN` on that environment
+   (**not** as a plain repository secret — an environment secret is only
+   exposed to jobs that opt into the environment).
 
-If you would rather use a long-lived token, add it as a repository secret
-named `CARGO_REGISTRY_TOKEN` and replace the "Authenticate to crates.io" step
-in the release workflow with that secret. Trusted Publishing is preferred
-because the credential is short-lived and scoped to this one workflow.
+Rotate the token if it is ever exposed; revoking it on crates.io immediately
+invalidates it.
+
+If you would prefer not to store a long-lived credential, crates.io also
+supports [Trusted Publishing](https://crates.io/docs/trusted-publishing), which
+issues a short-lived token over OIDC. That requires adding `id-token: write`
+to the release job's permissions and swapping the publish step for the
+`rust-lang/crates-io-auth-action` action.
 
 ## Manual release
 
