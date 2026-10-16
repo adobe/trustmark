@@ -18,9 +18,10 @@ This repository contains the following directories:
 - `/python-hailo`: Python implementation of TrustMark for HAILO-8L NPU (Raspberry Pi AI Kit). For information on use, see [Configuring TrustMark](python-hailo/CONFIG.md). 
 - `/js`: Javascript implementation of TrustMark decoding of image watermarks (using ONNX).  For more information, see [TrustMark - JavaScript implementation](js/README.md).
 - `/rust`: Rust implementation of TrustMark. for more information, see [TrustMark — Rust implementation](rust/README.md).
+- `/cpp`: C++ runner for TrustMark ONNX encoder and decoder models. See [TrustMark C++ model runner](cpp/README.md).
 - `/c2pa`: Python example of how to indicate the presence of a TrustMark watermark in a C2PA manifest. For more information, see [Using TrustMark with C2PA](c2pa/README.md).
 
-Model files (**ckpt** PyTorch files for Python and **onnx** ONNX files for JavaScript and Rust) are not packaged in this repository due to their size. See the [Rust instructions](rust/README.md#download-models) to fetch models for the Rust implementation. For Python model URLs and hashes, see [the Python implementation](https://github.com/adobe/trustmark/blob/010a8f3bf885eec6f2aaa418380afc41d68bb3e5/python/trustmark/trustmark.py#L29); its download location was updated from Netlify to S3 in April 2026.
+Model files (**ckpt** PyTorch files for Python and **onnx** ONNX files for JavaScript, Rust, and C++) are not packaged in this repository due to their size. See the [Rust instructions](rust/README.md#download-models) to fetch ONNX models for the Rust and C++ implementations. For Python model URLs and hashes, see [the Python implementation](https://github.com/adobe/trustmark/blob/010a8f3bf885eec6f2aaa418380afc41d68bb3e5/python/trustmark/trustmark.py#L29); its download location was updated from Netlify to S3 in April 2026.
 
 More information:
 
