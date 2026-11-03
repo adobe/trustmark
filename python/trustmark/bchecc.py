@@ -160,6 +160,7 @@ class BCH(object):
    def decode(self,data,recvecc): 
                 
       calc_ecc=self.encode(data)
+      corrected_ecc=bytearray(recvecc)
                 
       self.ECCstate.errloc=[]
                 
@@ -260,6 +261,8 @@ class BCH(object):
 
 
       nroots = self.getroots(len(data),self.ECCstate.elp)
+      if nroots != self.ECCstate.elp.deg or not 0 <= nroots <= t:
+          return -1
       datalen=len(data)
       nbits=(datalen*8)+self.ECCstate.ecc_bits
 
@@ -273,12 +276,17 @@ class BCH(object):
       for bitflip in self.ECCstate.errloc:
           byte= int (bitflip / 8)
           bit = pow(2,(bitflip & 7))
-          if bitflip < (len(data)+len(recvecc))*8:
+          if bitflip < (len(data)+len(corrected_ecc))*8:
             if byte<len(data):
               data[byte] = data[byte] ^ bit
             else:
-              recvecc[byte - len(data)] = recvecc[byte - len(data)] ^ bit
+              corrected_ecc[byte - len(data)] = corrected_ecc[byte - len(data)] ^ bit
 
+      calc_ecc=self.encode(data)
+      # Only the BCH parity bits participate; trailing byte padding is ignored.
+      pad_e=8*len(calc_ecc)-self.get_ecc_bits()
+      if (int.from_bytes(calc_ecc, 'big') >> pad_e) != (int.from_bytes(corrected_ecc, 'big') >> pad_e):
+          return -1
 
       return nroots
 

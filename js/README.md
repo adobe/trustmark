@@ -41,6 +41,18 @@ To run the example:
 
 To use the code in your own project, simply include the two JavaScript files as usual.
 
+## BCH library
+
+[`deps/bch_ecc.js`](deps/bch_ecc.js) contains the readable BCH source. The example loads
+[`deps/bch_ecc.min.js`](deps/bch_ecc.min.js), generated from that source without obfuscation.
+After changing the source, regenerate the minified file from the `js` directory:
+
+```sh
+npx --yes esbuild@0.27.4 deps/bch_ecc.js --minify --target=es2020 --legal-comments=inline --outfile=deps/bch_ecc.min.js
+```
+
+Run the CPU-only ECC regressions against both files with `node --test test-ecc.cjs`.
+
 ## Example output
 
 For an image containing a TrustMark watermark:
