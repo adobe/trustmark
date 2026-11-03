@@ -1,8 +1,9 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+## [0.9.3] - 2026-03-11
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+### Changed
+- Validation edge case fixed in BCH error correction library
 
 ## [0.9.2] - 2026-09-08
 

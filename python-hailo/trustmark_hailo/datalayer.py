@@ -188,6 +188,9 @@ class DataLayer(object):
             bitflips = bch_decoder.decode(data, ecc) 
         else:
             bitflips = -1 
+        # Byte alignment adds zero bits that were never transmitted.
+        if bitflips != -1 and pad_d and data[-1] & ((1 << pad_d)-1):
+            bitflips = -1
 #        print('Bitflips = %d' % bitflips)
         if bitflips == -1:
             if MODE=='text':
