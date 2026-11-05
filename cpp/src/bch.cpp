@@ -135,6 +135,9 @@ public:
             }
         }
         if (found != degree || found > t_) return false;
+        for (size_t i = data.size(); i < static_cast<size_t>(data_length); ++i) {
+            if (received[i] != '0') return false;
+        }
         data = received.substr(0, data.size());
         ecc = received.substr(data_length);
         return ecc == parity(data);
