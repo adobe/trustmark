@@ -133,12 +133,11 @@ impl Trustmark {
         // the image is always encoded with size 256x256
         let encode_size = 256;
 
-        // The model input is also needed for the residual; cloning it is cheaper than redoing the
-        // crop and resize.
+        // The model input is also needed for the residual, so cloning it.
         let model_input: ndarray::Array4<f32> =
             ModelImage(encode_size, self.variant, &img).try_into()?;
-        // A failure is reported as an image processing error, as `TryFrom<ModelImage> for Value`
-        // reports it in `decode`.
+        // A failure is reported as an image processing error,
+        // as `TryFrom<ModelImage> for Value` reports it in `decode`.
         let input_img: Value<TensorValueType<f32>> =
             Value::from_array(model_input.clone()).map_err(image_processing::Error::from)?;
         let bits: Value<TensorValueType<f32>> =
