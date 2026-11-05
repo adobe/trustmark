@@ -52,7 +52,7 @@ pip install .
 ## Quickstart
 
 To get started quickly, run the `python/test-decode.py` script that provides examples of watermarking several 
-image files from the `images` directory.
+image files from the `images` directory. 
 
 ### Run the example
 
@@ -105,15 +105,15 @@ im_recover.save('images/recovered.png')
 ## Data schema
 
 TrustMark encodes a payload (the watermark data embedded within the image) of 100 bits.
-You can configure an error correction level over the raw 100 bits of payload to maintain reliability under transformations or noise.
+You can configure an error correction level over the raw 100 bits of payload to maintain reliability under transformations or noise. 
 
-In payload encoding, the version bits comprise two reserved (unused) bits, and two bits encoding an integer value 0-3 that specifies the data schema as follows:
+In payload encoding, the version bits comprise two reserved (unused) bits, and two bits encoding an integer value 0-3 that specifies the data schema as follows: 
 - 0: BCH_SUPER
 - 1: BCH_5
 - 2: BCH_4
 - 3: BCH_3
 
-For more details and information on configuring the encoding mode in Python, see [Configuring TrustMark](python/CONFIG.md).
+For more details and information on configuring the encoding mode in Python, see [Configuring TrustMark](python/CONFIG.md). 
 
 ## Citation
 
@@ -140,6 +140,6 @@ month = nov
 }
 ```
 
-## License
+## License 
 
 This package is is distributed under the terms of the [MIT license](https://github.com/adobe/trustmark/blob/main/LICENSE). The MIT license covers both the code in this repo and the model files which are downloaded upon first use.
