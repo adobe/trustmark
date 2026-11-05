@@ -119,6 +119,8 @@ impl Trustmark {
     /// `watermark` is a bitstring encoding the watermark identifier to encode. `img` is the image
     /// which will be watermarked. `strength` is a number between 0 and 1 indicating how strong the
     /// resulting watermark should be. 0.95 is a normal strength.
+    ///
+    /// With the P and Q variants, an image with a width or height of 0 is an error.
     pub fn encode(
         &self,
         watermark: String,
@@ -131,8 +133,14 @@ impl Trustmark {
         // the image is always encoded with size 256x256
         let encode_size = 256;
 
+        // The model input is also needed for the residual; cloning it is cheaper than redoing the
+        // crop and resize.
+        let model_input: ndarray::Array4<f32> =
+            ModelImage(encode_size, self.variant, &img).try_into()?;
+        // A failure is reported as an image processing error, as `TryFrom<ModelImage> for Value`
+        // reports it in `decode`.
         let input_img: Value<TensorValueType<f32>> =
-            ModelImage(encode_size, self.variant, img.clone()).try_into()?;
+            Value::from_array(model_input.clone()).map_err(image_processing::Error::from)?;
         let bits: Value<TensorValueType<f32>> =
             Bits::apply_error_correction_and_schema(watermark, self.version)?.into();
         let output_img = {
@@ -148,16 +156,18 @@ impl Trustmark {
         };
 
         // Need to calculate and apply the residual.
-        let input_img: Value<TensorValueType<f32>> =
-            ModelImage(encode_size, self.variant, img.clone()).try_into()?;
-        let residual = (self.variant.strength_multiplier() * strength)
-            * (output_img - input_img.try_extract_array::<f32>()?);
+        let residual =
+            (self.variant.strength_multiplier() * strength) * (output_img - model_input.into_dyn());
 
         // Residual should be small perturbations.
         let mut residual = residual.clamp(-0.2, 0.2);
         if (self.variant == Variant::Q && !(0.5..=2.0).contains(&aspect_ratio))
             || self.variant == Variant::P
         {
+            // `remove_boundary_artifact` cannot pad to the proportions of an empty image.
+            if original_width == 0 || original_height == 0 {
+                return Err(image_processing::Error::Image.into());
+            }
             residual = image_processing::remove_boundary_artifact(
                 residual,
                 (original_width as usize, original_height as usize),
@@ -165,7 +175,7 @@ impl Trustmark {
             );
         }
 
-        let ModelImage(_, _, residual) = (encode_size, self.variant, residual).try_into()?;
+        let residual = image_processing::residual_image(residual)?;
 
         Ok(image_processing::apply_residual(img, residual))
     }
@@ -175,15 +185,16 @@ impl Trustmark {
         // P variant has a smaller decode size
         let decode_size = if self.variant == Variant::P { 224 } else { 256 };
 
-        let img: Value<TensorValueType<f32>> =
-            ModelImage(decode_size, self.variant, img).try_into()?;
+        let input_img: Value<TensorValueType<f32>> =
+            ModelImage(decode_size, self.variant, &img).try_into()?;
+        drop(img);
         let watermark = {
             let mut decoder = self
                 .decoder
                 .lock()
                 .map_err(|_| Error::SessionLockPoisoned)?;
             let outputs = decoder.run(ort::inputs![
-                "image" => img,
+                "image" => input_img,
             ])?;
             outputs["output"].try_extract_array::<f32>()?.to_owned()
         };
@@ -213,6 +224,28 @@ mod tests {
         let input = image::load_from_memory(png.get_ref()).unwrap();
         let decoded = tm.decode(input).unwrap();
         assert_eq!(watermark, decoded);
+    }
+
+    #[test]
+    fn encode_on_empty_image() {
+        for variant in [Variant::B, Variant::C, Variant::P, Variant::Q] {
+            let tm = Trustmark::new("./models", variant, Version::Bch5).unwrap();
+            for (width, height) in [(0, 0), (0, 10), (10, 0)] {
+                let input = DynamicImage::new_rgb8(width, height);
+                let result = tm.encode("0010101".to_owned(), input.clone(), 0.95);
+                if matches!(variant, Variant::P | Variant::Q) {
+                    assert!(matches!(
+                        result,
+                        Err(Error::ImageProcessing(image_processing::Error::Image))
+                    ));
+                } else {
+                    assert_eq!(result.unwrap().dimensions(), (width, height));
+                }
+                // An invalid watermark is reported before the image size.
+                let result = tm.encode("not bits".to_owned(), input, 0.95);
+                assert!(matches!(result, Err(Error::Bits(_))));
+            }
+        }
     }
 
     #[test]

@@ -75,7 +75,8 @@ impl Bits {
         }
 
         // pad the input
-        input.push_str(&"0".repeat(data_bits - input.len() + (8 - data_bits % 8)));
+        let padding = (8 - data_bits % 8) % 8;
+        input.push_str(&"0".repeat(data_bits - input.len() + padding));
 
         // pack the input into bytes
         let data: Vec<u8> = input
@@ -171,8 +172,9 @@ impl Bits {
         let mut ecc = s[data_bits..data_bits + ecc_bits].to_string();
 
         // pad
-        data.push_str(&"0".repeat(data_bits - data.len() + (8 - data_bits % 8)));
-        ecc.push_str(&"0".repeat(ecc_bits - ecc.len() + (8 - ecc_bits % 8)));
+        let data_padding = (8 - data_bits % 8) % 8;
+        data.push_str(&"0".repeat(data_bits - data.len() + data_padding));
+        ecc.push_str(&"0".repeat(ecc_bits - ecc.len() + (8 - ecc_bits % 8) % 8));
 
         // pack into bytes
         let mut data: Vec<u8> = data
@@ -191,6 +193,9 @@ impl Bits {
         let bitflips = bch::bch_decode(&mut ecc_state, &mut data, &ecc);
 
         if bitflips > version.allowed_bit_flips() {
+            return Err(Error::CorruptWatermark);
+        }
+        if data_padding != 0 && data.last().unwrap() & ((1_u8 << data_padding) - 1) != 0 {
             return Err(Error::CorruptWatermark);
         }
 
@@ -392,6 +397,63 @@ mod tests {
             bits.get_data(),
             "1011011110011000111111000000011111011111011100000110110110111"
         );
+    }
+
+    #[test]
+    fn noncanonical_packets_are_rejected() {
+        for (packet, version) in [
+            (
+                "0000101101110101001111100000111101110001010010000000110001111101101000001101100101010010111111011111",
+                Version::Bch3,
+            ),
+            (
+                "1001110101000101100000011100111101010010000001100101100010001001111100010010000001101111101011000001",
+                Version::Bch5,
+            ),
+        ] {
+            assert!(matches!(
+                Bits::new_with_version(packet, version),
+                Err(Error::CorruptWatermark)
+            ));
+            assert!(matches!(
+                Bits::new(packet.to_owned()),
+                Err(Error::CorruptWatermark)
+            ));
+        }
+    }
+
+    #[test]
+    fn python_packets_keep_the_full_correction_radius() {
+        let packets = [
+            (Version::BchSuper, "1011010010100000000000000000000000000000001111000100010111110110000001111110001101101011000010000000"),
+            (Version::Bch5, "1011010010100000000000000000000000000000000000000000000000000111110111111010101111110110000101010001"),
+            (Version::Bch4, "1011010010100000000000000000000000000000000000000000000000000000000000011011111010010110010010000010"),
+            (Version::Bch3, "1011010010100000000000000000000000000000000000000000000000000000000000000000000010100100010110110011"),
+        ];
+        for (version, packet) in packets {
+            let encoded =
+                Bits::apply_error_correction_and_schema("10110100101".to_owned(), version).unwrap();
+            assert_eq!(encoded.0, packet);
+            let capacity = version.data_bits() as usize;
+            for flips in 0..=version.allowed_bit_flips() as usize {
+                for layout in 0..3 {
+                    let mut corrupted = packet.as_bytes().to_vec();
+                    for index in 0..flips {
+                        let location = match layout {
+                            0 => index,
+                            1 => capacity + index,
+                            _ if index % 2 == 1 => capacity + index / 2,
+                            _ => index / 2,
+                        };
+                        corrupted[location] ^= 1;
+                    }
+                    let corrupted = String::from_utf8(corrupted).unwrap();
+                    let decoded = Bits::new_with_version(&corrupted, version).unwrap();
+                    assert_eq!(decoded.get_version(), version);
+                    assert_eq!(decoded.get_data(), packet[..capacity]);
+                }
+            }
+        }
     }
 
     #[test]

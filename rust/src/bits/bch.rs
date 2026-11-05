@@ -344,10 +344,11 @@ pub(super) fn bch_encode(ecc_state: &mut EccState, data: &[u8]) -> Vec<u8> {
         let tmp = data[posn];
         let cyclic_tab = ecc_state.cyclic_tab.as_ref().unwrap();
         posn += 1;
-        let pidx = (l + 1) * (((ecc[0] >> 24) ^ (tmp as u32)) & 0xff);
+        let mut pidx = (l + 1) * (((ecc[0] >> 24) ^ (tmp as u32)) & 0xff);
         for i in 0..l {
             ecc[i as usize] = ((ecc[i as usize] << 8) | (ecc[(i + 1) as usize] >> 24))
                 ^ cyclic_tab[pidx as usize];
+            pidx += 1;
         }
         ecc[l as usize] = (ecc[l as usize] << 8) ^ cyclic_tab[pidx as usize];
         leftdata -= 1;
@@ -379,6 +380,7 @@ pub(super) fn bch_encode(ecc_state: &mut EccState, data: &[u8]) -> Vec<u8> {
 pub(super) fn bch_decode(ecc_state: &mut EccState, data: &mut [u8], recvecc: &[u8]) -> u8 {
     //   calc_ecc=self.encode(data)
     let _calc_ecc = bch_encode(ecc_state, data);
+    let mut corrected_ecc = recvecc.to_vec();
 
     //   self.ECCstate.errloc=[]
     ecc_state.errloc = Some(vec![]);
@@ -585,7 +587,7 @@ pub(super) fn bch_decode(ecc_state: &mut EccState, data: &mut [u8], recvecc: &[u
     // Rust version returns u32::MAX. If we try to iterate over 0..u32::MAX, we'll try to access an
     // element from ecc_state.errloc, which is empty.
     // Hence, we check for the sentinal value here.
-    if nroots == u32::MAX {
+    if nroots != elp.deg || nroots > t {
         return u8::MAX;
     }
     let datalen = data.len() as u32;
@@ -618,12 +620,26 @@ pub(super) fn bch_decode(ecc_state: &mut EccState, data: &mut [u8], recvecc: &[u
     for bitflip in ecc_state.errloc.as_ref().unwrap() {
         let byte = bitflip / 8;
         let bit = 2_u32.pow(bitflip & 7);
-        if (*bitflip as usize) < (data.len() + recvecc.len()) * 8 {
+        if (*bitflip as usize) < (data.len() + corrected_ecc.len()) * 8 {
             if (byte as usize) < data.len() {
                 data[byte as usize] ^= bit as u8;
             } else {
-                recvecc[(byte - data.len() as u32) as usize] ^= bit as u8;
+                corrected_ecc[(byte - data.len() as u32) as usize] ^= bit as u8;
             }
+        }
+    }
+
+    let reencoded_ecc = bch_encode(ecc_state, data);
+    let ecc_bits = ecc_state.ecc_bits.unwrap() as usize;
+    let whole_bytes = ecc_bits / 8;
+    if reencoded_ecc[..whole_bytes] != corrected_ecc[..whole_bytes] {
+        return u8::MAX;
+    }
+    // Trailing byte-alignment bits are not protected BCH parity.
+    if !ecc_bits.is_multiple_of(8) {
+        let mask = u8::MAX << (8 - ecc_bits % 8);
+        if (reencoded_ecc[whole_bytes] ^ corrected_ecc[whole_bytes]) & mask != 0 {
+            return u8::MAX;
         }
     }
 
@@ -983,5 +999,82 @@ mod tests {
         let mut ecc_state = bch_init(4, 137);
         let ecc = bch_encode(&mut ecc_state, &[133, 20, 228, 249, 11, 172, 165, 151, 0]);
         assert_eq!(ecc, &[115, 32, 10, 0]);
+    }
+
+    #[test]
+    fn quadratic_zero_roots_are_rejected() {
+        let packet = "0000101101110101001111100000111101110001010010000000110001111101101000001101100101010010111111011111";
+        let pack = |bits: &str| {
+            bits.as_bytes()
+                .chunks(8)
+                .map(|chunk| {
+                    chunk.iter().enumerate().fold(0_u8, |byte, (index, bit)| {
+                        byte | ((bit - b'0') << (7 - index))
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut data = pack(&packet[..75]);
+        let ecc = pack(&packet[75..96]);
+        let mut ecc_state = bch_init(3, POLYNOMIAL);
+        assert_eq!(bch_decode(&mut ecc_state, &mut data, &ecc), u8::MAX);
+        assert!(ecc_state.errloc.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn byte_payloads_keep_the_full_correction_radius() {
+        for radius in [8, 5, 4, 3] {
+            let mut ecc_state = bch_init(radius, POLYNOMIAL);
+            for size in [1, 5, 8] {
+                let original: Vec<_> = (0..size)
+                    .map(|index| (index as u8).wrapping_mul(37) | 31)
+                    .collect();
+                let parity = bch_encode(&mut ecc_state, &original);
+                for flips in 0..=radius as usize {
+                    for layout in 0..3 {
+                        let mut data = original.clone();
+                        let mut ecc = parity.clone();
+                        for index in 0..flips {
+                            let location = match layout {
+                                0 => index,
+                                1 => size * 8 + index,
+                                _ if index % 2 == 1 => size * 8 + index / 2,
+                                _ => index / 2,
+                            };
+                            if location < size * 8 {
+                                data[location / 8] ^= 1 << (7 - location % 8);
+                            } else {
+                                let bit = location - size * 8;
+                                ecc[bit / 8] ^= 1 << (7 - bit % 8);
+                            }
+                        }
+                        assert_eq!(
+                            bch_decode(&mut ecc_state, &mut data, &ecc),
+                            flips as u8,
+                            "radius={radius} size={size} flips={flips} layout={layout}"
+                        );
+                        assert_eq!(data, original);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ecc_byte_padding_remains_ignored_during_correction() {
+        for radius in [8, 5, 4, 3] {
+            let mut ecc_state = bch_init(radius, POLYNOMIAL);
+            let original = [255, 7];
+            let mut parity = bch_encode(&mut ecc_state, &original);
+            let padding = parity.len() * 8 - ecc_state.ecc_bits.unwrap() as usize;
+            if padding != 0 {
+                *parity.last_mut().unwrap() |= ((1_u16 << padding) - 1) as u8;
+            }
+            let mut data = original;
+            data[0] ^= 128;
+            parity[0] ^= 128;
+            assert_eq!(bch_decode(&mut ecc_state, &mut data, &parity), 2);
+            assert_eq!(data, original);
+        }
     }
 }

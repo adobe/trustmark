@@ -9,11 +9,10 @@ use std::cmp;
 
 use fast_image_resize::{ResizeAlg, ResizeOptions, Resizer};
 use image::{
-    imageops::{self, FilterType},
-    DynamicImage, GenericImageView as _, GrayAlphaImage, GrayImage, ImageBuffer, Pixel as _,
-    Rgb32FImage, RgbImage, Rgba32FImage, RgbaImage,
+    imageops::FilterType, DynamicImage, GenericImageView as _, GrayAlphaImage, GrayImage,
+    ImageBuffer, Pixel, Rgb32FImage, RgbImage, Rgba32FImage, RgbaImage,
 };
-use ndarray::{s, Array, ArrayD, Axis, ShapeError};
+use ndarray::{s, Array, Array4, ArrayD, Axis, IxDyn, ShapeError};
 use ort::value::{TensorValueType, Value};
 
 use crate::Variant;
@@ -34,7 +33,11 @@ macro_rules! convert_from_neg1_1_to_0_1 {
     };
 }
 
-pub(super) struct ModelImage(pub(super) u32, pub(super) Variant, pub(super) DynamicImage);
+pub(super) struct ModelImage<'a>(
+    pub(super) u32,
+    pub(super) Variant,
+    pub(super) &'a DynamicImage,
+);
 
 /// The error type for the `image_processing` module.
 #[derive(Debug, thiserror::Error)]
@@ -60,18 +63,27 @@ pub enum Error {
     Resize(#[from] fast_image_resize::ResizeError),
 }
 
-impl TryFrom<ModelImage> for Value<TensorValueType<f32>> {
+impl TryFrom<ModelImage<'_>> for Value<TensorValueType<f32>> {
     type Error = Error;
 
-    fn try_from(ModelImage(size, variant, img): ModelImage) -> Result<Self, Self::Error> {
-        let (w, h, xpos, ypos) = center_crop_size_and_offset(variant, &img);
+    fn try_from(img: ModelImage<'_>) -> Result<Self, Self::Error> {
+        let array: Array4<f32> = img.try_into()?;
+        Ok(Value::from_array(array)?)
+    }
+}
+
+impl TryFrom<ModelImage<'_>> for Array4<f32> {
+    type Error = Error;
+
+    fn try_from(ModelImage(size, variant, img): ModelImage<'_>) -> Result<Self, Self::Error> {
+        let (w, h, xpos, ypos) = center_crop_size_and_offset(variant, img);
 
         let options = ResizeOptions::new()
             .crop(xpos as f64, ypos as f64, w as f64, h as f64)
             .resize_alg(ResizeAlg::Interpolation(
                 fast_image_resize::FilterType::Bilinear,
             ));
-        let modified_img = resize_img(&img, size, size, options)?;
+        let modified_img = resize_img(img, size, size, options)?;
 
         let img = modified_img.into_rgb32f().into_vec();
         let array = Array::from(img);
@@ -85,74 +97,82 @@ impl TryFrom<ModelImage> for Value<TensorValueType<f32>> {
             .reversed_axes();
         array.swap_axes(2, 3);
         assert_eq!(array.shape(), &[1, 3, size as usize, size as usize]);
-        Ok(Value::from_array(array.to_owned())?)
+        Ok(array.to_owned())
     }
 }
 
-impl TryFrom<(u32, Variant, ArrayD<f32>)> for ModelImage {
-    type Error = Error;
-
-    fn try_from(
-        (size, variant, mut array): (u32, Variant, ArrayD<f32>),
-    ) -> Result<Self, Self::Error> {
-        let &[1, 3, height, width] = &array.shape().to_owned()[..] else {
-            return Err(Error::InvalidShape);
-        };
-        array.swap_axes(2, 3);
-        let array = array.reversed_axes().remove_axis(Axis(3));
-        let array = array.to_shape([width * height * 3])?;
-
-        // The `image` crate normalizes to `[0,1]`. Trustmark wants images normalized to `[-1,1]`.
-        let array = convert_from_neg1_1_to_0_1!(array);
-
-        let image = Rgb32FImage::from_vec(width as u32, height as u32, array.to_vec())
-            .ok_or(Error::Image)?;
-
-        Ok(Self(size, variant, image.into()))
+/// Converts the residual array, of shape `[1, 3, height, width]`, into an `Rgb32F` image.
+///
+/// The values are converted in place when the array is stored in pixel order, as
+/// `remove_boundary_artifact` stores it, and copied once otherwise.
+pub(super) fn residual_image(array: ArrayD<f32>) -> Result<DynamicImage, Error> {
+    let &[1, 3, height, width] = array.shape() else {
+        return Err(Error::InvalidShape);
+    };
+    // `[height, width, 3]`, the pixel order of an image.
+    let mut pixels = array
+        .permuted_axes(IxDyn(&[0, 2, 3, 1]))
+        .remove_axis(Axis(0));
+    if !pixels.is_standard_layout() {
+        pixels = pixels.as_standard_layout().into_owned();
     }
+
+    // Trustmark's residual is in `[-1,1]`. The `image` crate wants `[0,1]`.
+    pixels.mapv_inplace(|value| convert_from_neg1_1_to_0_1!(value));
+
+    // In standard layout the values are contiguous, starting at `offset` in the buffer.
+    let length = pixels.len();
+    let (mut values, offset) = pixels.into_raw_vec_and_offset();
+    values.drain(..offset.unwrap_or(0));
+    values.truncate(length);
+
+    let image = Rgb32FImage::from_vec(width as u32, height as u32, values).ok_or(Error::Image)?;
+
+    Ok(image.into())
 }
+
+/// Red, green and blue: the channels the residual has and is added to. Alpha gets no residual.
+const COLOR_CHANNELS: usize = 3;
 
 /// Apply `residual` to the `input`.
 ///
-/// This function upscales `residual` to be the size of of `input`, then adds `residual` to the
-/// `input`.
+/// This function resizes `residual` to the size of `input`, then adds `residual` to the `input`.
+///
+/// The residual is freed once resized, and the sum is written into the input converted to
+/// `Rgb32F`, or `Rgba32F` when it has alpha, so the resized residual is the only other image held
+/// while adding. Converting the input to `Rgb32F` or to `Rgba32F` gives the same color values.
 pub(super) fn apply_residual(input: DynamicImage, residual: DynamicImage) -> DynamicImage {
-    let has_alpha = input.color().has_alpha();
     let (w, h) = input.dimensions();
+    let resized = residual
+        .resize_exact(w, h, FilterType::Triangle)
+        .into_rgb32f();
+    drop(residual);
 
-    let applied = {
-        let input = input.clone().into_rgba32f();
-        let mut target = input.clone();
-
-        let residual = residual.resize_exact(w, h, FilterType::Triangle);
-        let residual = residual.into_rgba32f();
-
-        for ((target, residual), original) in target
-            .pixels_mut()
-            .zip(residual.pixels())
-            .zip(input.pixels())
-        {
-            target.apply2(residual, |x, y| {
-                let x = convert_from_0_1_to_neg1_1!(x);
-                let y = convert_from_0_1_to_neg1_1!(y);
-
-                convert_from_neg1_1_to_0_1!(f32::min(x + y, 1.0))
-            });
-            target[3] = original[3];
-        }
-
-        target
-    };
-
-    if has_alpha {
-        let mut input = input.into_rgba32f();
-        imageops::replace(&mut input, &applied, 0, 0);
-        input.into()
+    if input.color().has_alpha() {
+        let mut output = input.into_rgba32f();
+        add_residual(&mut output, &resized);
+        output.into()
     } else {
-        let mut input = input.into_rgb32f();
-        let applied = DynamicImage::ImageRgba32F(applied).into_rgb32f();
-        imageops::replace(&mut input, &applied, 0, 0);
-        input.into()
+        let mut output = input.into_rgb32f();
+        add_residual(&mut output, &resized);
+        output.into()
+    }
+}
+
+/// Adds `residual` to the color channels of `image`.
+fn add_residual<P: Pixel<Subpixel = f32>>(
+    image: &mut ImageBuffer<P, Vec<f32>>,
+    residual: &Rgb32FImage,
+) {
+    for (pixel, residual_pixel) in image.pixels_mut().zip(residual.pixels()) {
+        let values = pixel.channels_mut();
+        for channel in 0..COLOR_CHANNELS {
+            // Both values to `[-1, 1]`, added, capped at 1, and back to `[0, 1]`.
+            let pixel_value = convert_from_0_1_to_neg1_1!(values[channel]);
+            let residual_value = convert_from_0_1_to_neg1_1!(residual_pixel[channel]);
+            values[channel] =
+                convert_from_neg1_1_to_0_1!(f32::min(pixel_value + residual_value, 1.0));
+        }
     }
 }
 
@@ -232,15 +252,16 @@ pub(super) fn remove_boundary_artifact(
         .map(|i| residual.slice(s![.., i, .., ..]).mean().unwrap())
         .collect();
 
-    // We want one dimension of the output to be 256 and we we want the aspect ratio of the output
-    // to match the input image.
+    // We want one dimension of the output to be 256 and we want the aspect ratio of the output
+    // to match the input image. The array has shape `[1, 3, height, width]` but is stored in pixel
+    // order, `[1, height, width, 3]`, so `residual_image` needs no copy of it.
     let other_dim;
     let mut mean_padded: ndarray::Array4<f32> = if width > height {
         other_dim = ((width as f32 / height as f32) * 256.0) as usize;
-        ndarray::Array4::zeros([1, 3, 256_usize, other_dim])
+        ndarray::Array4::zeros([1, 256_usize, other_dim, 3]).permuted_axes([0, 3, 1, 2])
     } else {
         other_dim = ((height as f32 / width as f32) * 256.0) as usize;
-        ndarray::Array4::zeros([1, 3, other_dim, 256])
+        ndarray::Array4::zeros([1, other_dim, 256, 3]).permuted_axes([0, 3, 1, 2])
     };
 
     // This softens the transition between the residual area and the rest of the image.
@@ -270,9 +291,199 @@ pub(super) fn remove_boundary_artifact(
 
 #[cfg(test)]
 mod tests {
-    use ndarray::Array4;
+    use image::{
+        imageops,
+        metadata::{CicpColorPrimaries, CicpTransferCharacteristics},
+    };
 
     use super::*;
+
+    fn residual_image_main_reference(mut array: ArrayD<f32>) -> DynamicImage {
+        let &[1, 3, height, width] = array.shape() else {
+            panic!("invalid reference residual shape");
+        };
+        array.swap_axes(2, 3);
+        let array = array.reversed_axes().remove_axis(Axis(3));
+        let array = array.to_shape([width * height * 3]).unwrap();
+        let array = (array + 1.0_f32) / 2.0_f32;
+        Rgb32FImage::from_vec(width as u32, height as u32, array.to_vec())
+            .unwrap()
+            .into()
+    }
+
+    fn apply_residual_main_reference(input: DynamicImage, residual: DynamicImage) -> DynamicImage {
+        let has_alpha = input.color().has_alpha();
+        let (width, height) = input.dimensions();
+        let applied = {
+            let input = input.clone().into_rgba32f();
+            let mut target = input.clone();
+            let residual = residual
+                .resize_exact(width, height, FilterType::Triangle)
+                .into_rgba32f();
+            for ((target, residual), original) in target
+                .pixels_mut()
+                .zip(residual.pixels())
+                .zip(input.pixels())
+            {
+                target.apply2(residual, |pixel, residual| {
+                    let pixel = pixel * 2.0_f32 - 1.0_f32;
+                    let residual = residual * 2.0_f32 - 1.0_f32;
+                    (f32::min(pixel + residual, 1.0_f32) + 1.0_f32) / 2.0_f32
+                });
+                target[3] = original[3];
+            }
+            target
+        };
+        if has_alpha {
+            let mut output = input.into_rgba32f();
+            imageops::replace(&mut output, &applied, 0, 0);
+            output.into()
+        } else {
+            let mut output = input.into_rgb32f();
+            let applied = DynamicImage::ImageRgba32F(applied).into_rgb32f();
+            imageops::replace(&mut output, &applied, 0, 0);
+            output.into()
+        }
+    }
+
+    fn assert_composition_matches_main(input: &DynamicImage, residual: &ArrayD<f32>) {
+        let expected = apply_residual_main_reference(
+            input.clone(),
+            residual_image_main_reference(residual.clone()),
+        );
+        let actual = apply_residual(input.clone(), residual_image(residual.clone()).unwrap());
+        assert_eq!(actual.dimensions(), input.dimensions());
+        assert_eq!(actual.color(), expected.color());
+        assert_eq!(actual.color_space(), input.color_space());
+        assert_eq!(actual.color_space(), expected.color_space());
+        assert_eq!(actual.as_bytes().len(), expected.as_bytes().len());
+        let actual_values = actual.as_bytes().as_chunks::<4>().0;
+        let expected_values = expected.as_bytes().as_chunks::<4>().0;
+        for (index, (actual, expected)) in actual_values.iter().zip(expected_values).enumerate() {
+            assert_eq!(
+                actual,
+                expected,
+                "float {index}, input {:?} {:?}, residual {:?}",
+                input.color(),
+                input.dimensions(),
+                residual.shape()
+            );
+        }
+        if input.color().has_alpha() {
+            let original = input.to_rgba32f();
+            for (actual, original) in actual.as_rgba32f().unwrap().pixels().zip(original.pixels()) {
+                assert_eq!(actual[3].to_bits(), original[3].to_bits());
+            }
+        }
+    }
+
+    fn composition_residual(height: usize, width: usize) -> ArrayD<f32> {
+        Array4::from_shape_fn([1, 3, height, width], |(_, channel, row, column)| {
+            ((channel * 1027 + row * 131 + column * 97) % 401) as f32 / 1000.0 - 0.2
+        })
+        .into_dyn()
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_every_color_type() {
+        for (width, height) in [(48, 35), (32, 32), (32, 40), (16, 10), (20, 50)] {
+            let float =
+                DynamicImage::ImageRgba32F(Rgba32FImage::from_fn(width, height, |column, row| {
+                    image::Rgba([
+                        ((column * 17 + row * 13) % 256) as f32 / 255.0,
+                        ((column * 7 + row * 19) % 256) as f32 / 255.0,
+                        ((column * 23 + row * 3) % 256) as f32 / 255.0,
+                        ((column * 11 + row * 29) % 256) as f32 / 255.0,
+                    ])
+                }));
+            let inputs = [
+                DynamicImage::ImageLuma8(float.to_luma8()),
+                DynamicImage::ImageLumaA8(float.to_luma_alpha8()),
+                DynamicImage::ImageRgb8(float.to_rgb8()),
+                DynamicImage::ImageRgba8(float.to_rgba8()),
+                DynamicImage::ImageLuma16(float.to_luma16()),
+                DynamicImage::ImageLumaA16(float.to_luma_alpha16()),
+                DynamicImage::ImageRgb16(float.to_rgb16()),
+                DynamicImage::ImageRgba16(float.to_rgba16()),
+                DynamicImage::ImageRgb32F(float.to_rgb32f()),
+                float,
+            ];
+            for input in inputs {
+                let default = input.color_space();
+                let color_spaces = [
+                    default,
+                    image::metadata::Cicp {
+                        primaries: CicpColorPrimaries::SmpteRp432,
+                        ..default
+                    },
+                    image::metadata::Cicp {
+                        transfer: CicpTransferCharacteristics::Linear,
+                        ..default
+                    },
+                ];
+                for color_space in color_spaces {
+                    let mut input = input.clone();
+                    input.set_color_space(color_space).unwrap();
+                    for (height, width) in [(32, 32), (32, 48), (48, 32)] {
+                        assert_composition_matches_main(
+                            &input,
+                            &composition_residual(height, width),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_sample_images() {
+        for path in ["../images/ghost.png", "../images/ufo_240.jpg"] {
+            let input = image::open(path).unwrap();
+            for (height, width) in [(256, 256), (256, 384), (384, 256)] {
+                assert_composition_matches_main(&input, &composition_residual(height, width));
+            }
+        }
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_special_floats() {
+        let values = [
+            -1.0,
+            -0.0,
+            0.0,
+            0.5,
+            1.0,
+            2.0,
+            f32::MIN_POSITIVE,
+            f32::from_bits(1),
+            f32::MIN,
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::from_bits(0xffc01234),
+        ];
+        for (width, height) in [(32, 32), (48, 35), (16, 10)] {
+            let float =
+                DynamicImage::ImageRgba32F(Rgba32FImage::from_fn(width, height, |column, row| {
+                    image::Rgba(std::array::from_fn(|channel| {
+                        values[(column as usize + row as usize * 7 + channel * 3) % values.len()]
+                    }))
+                }));
+            for input in [DynamicImage::ImageRgb32F(float.to_rgb32f()), float] {
+                for (height, width) in [(32, 32), (32, 48), (48, 32)] {
+                    let residual = Array4::from_shape_fn(
+                        [1, 3, height, width],
+                        |(_, channel, row, column)| {
+                            values[(row * 3 + column + channel * 5) % values.len()]
+                        },
+                    )
+                    .into_dyn();
+                    assert_composition_matches_main(&input, &residual);
+                }
+            }
+        }
+    }
 
     #[test]
     fn renormalize_from_0_1() {
@@ -333,5 +544,45 @@ mod tests {
         let output = remove_boundary_artifact(residual.into_dyn(), (width, height), Variant::P);
 
         assert_eq!(output.shape(), &[1, 3, 298, 256]);
+    }
+
+    #[test]
+    fn residual_image_on_any_layout() {
+        // Every value differs, so values read from the wrong place change the image.
+        let value = |n: usize, c: usize, y: usize, x: usize| {
+            ((n * 3 + c) * 600 + y * 30 + x) as f32 / 4000.0 - 0.5
+        };
+        // Channel order, as the model returns it, is copied once. Pixel order, as
+        // `remove_boundary_artifact` stores it, is converted in place, also when the values start
+        // at an offset in the buffer or are followed by other values.
+        let channel_order = Array4::from_shape_fn([1, 3, 20, 30], |(n, c, y, x)| value(n, c, y, x));
+        let mut reversed_rows = channel_order.clone();
+        reversed_rows.invert_axis(Axis(2));
+        let pixel_order = Array4::from_shape_fn([2, 20, 30, 3], |(n, y, x, c)| value(n, c, y, x));
+        let mut at_offset = pixel_order.clone();
+        at_offset.slice_collapse(s![1.., .., .., ..]);
+        let mut with_trailing_values = pixel_order;
+        with_trailing_values.slice_collapse(s![..1, .., .., ..]);
+        let arrays = [
+            channel_order,
+            reversed_rows,
+            at_offset.permuted_axes([0, 3, 1, 2]),
+            with_trailing_values.permuted_axes([0, 3, 1, 2]),
+            Array4::zeros([1, 3, 0, 30]),
+        ];
+        for array in arrays {
+            let (height, width) = (array.shape()[2], array.shape()[3]);
+            let expected = Rgb32FImage::from_fn(width as u32, height as u32, |x, y| {
+                image::Rgb(std::array::from_fn(|c| {
+                    convert_from_neg1_1_to_0_1!(array[[0, c, y as usize, x as usize]])
+                }))
+            });
+            let actual = residual_image(array.into_dyn()).unwrap();
+            assert_eq!(actual, DynamicImage::ImageRgb32F(expected));
+        }
+        assert!(matches!(
+            residual_image(Array4::zeros([1, 4, 2, 2]).into_dyn()),
+            Err(Error::InvalidShape)
+        ));
     }
 }
