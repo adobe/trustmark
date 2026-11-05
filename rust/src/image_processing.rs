@@ -246,8 +246,9 @@ pub(super) fn remove_boundary_artifact(
         .collect();
 
     // We want one dimension of the output to be 256 and we want the aspect ratio of the output
-    // to match the input image. The array has shape `[1, 3, height, width]` but is stored in pixel
-    // order, `[1, height, width, 3]`, so `residual_image` needs no copy of it.
+    // to match the input image.
+    // The array has shape `[1, 3, height, width]` but is stored in pixel order,
+    // `[1, height, width, 3]`, so `residual_image` needs no copy of it.
     let other_dim;
     let mut mean_padded: ndarray::Array4<f32> = if width > height {
         other_dim = ((width as f32 / height as f32) * 256.0) as usize;
@@ -378,13 +379,9 @@ mod tests {
 
     #[test]
     fn residual_image_on_any_layout() {
-        // Every value differs, so values read from the wrong place change the image.
         let value = |n: usize, c: usize, y: usize, x: usize| {
             ((n * 3 + c) * 600 + y * 30 + x) as f32 / 4000.0 - 0.5
         };
-        // Channel order, as the model returns it, is copied once. Pixel order, as
-        // `remove_boundary_artifact` stores it, is converted in place, also when the values start
-        // at an offset in the buffer or are followed by other values.
         let channel_order = Array4::from_shape_fn([1, 3, 20, 30], |(n, c, y, x)| value(n, c, y, x));
         let mut reversed_rows = channel_order.clone();
         reversed_rows.invert_axis(Axis(2));
