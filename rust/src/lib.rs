@@ -185,15 +185,16 @@ impl Trustmark {
         // P variant has a smaller decode size
         let decode_size = if self.variant == Variant::P { 224 } else { 256 };
 
-        let img: Value<TensorValueType<f32>> =
+        let input_img: Value<TensorValueType<f32>> =
             ModelImage(decode_size, self.variant, &img).try_into()?;
+        drop(img);
         let watermark = {
             let mut decoder = self
                 .decoder
                 .lock()
                 .map_err(|_| Error::SessionLockPoisoned)?;
             let outputs = decoder.run(ort::inputs![
-                "image" => img,
+                "image" => input_img,
             ])?;
             outputs["output"].try_extract_array::<f32>()?.to_owned()
         };

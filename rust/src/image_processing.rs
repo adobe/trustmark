@@ -291,7 +291,199 @@ pub(super) fn remove_boundary_artifact(
 
 #[cfg(test)]
 mod tests {
+    use image::{
+        imageops,
+        metadata::{CicpColorPrimaries, CicpTransferCharacteristics},
+    };
+
     use super::*;
+
+    fn residual_image_main_reference(mut array: ArrayD<f32>) -> DynamicImage {
+        let &[1, 3, height, width] = array.shape() else {
+            panic!("invalid reference residual shape");
+        };
+        array.swap_axes(2, 3);
+        let array = array.reversed_axes().remove_axis(Axis(3));
+        let array = array.to_shape([width * height * 3]).unwrap();
+        let array = (array + 1.0_f32) / 2.0_f32;
+        Rgb32FImage::from_vec(width as u32, height as u32, array.to_vec())
+            .unwrap()
+            .into()
+    }
+
+    fn apply_residual_main_reference(input: DynamicImage, residual: DynamicImage) -> DynamicImage {
+        let has_alpha = input.color().has_alpha();
+        let (width, height) = input.dimensions();
+        let applied = {
+            let input = input.clone().into_rgba32f();
+            let mut target = input.clone();
+            let residual = residual
+                .resize_exact(width, height, FilterType::Triangle)
+                .into_rgba32f();
+            for ((target, residual), original) in target
+                .pixels_mut()
+                .zip(residual.pixels())
+                .zip(input.pixels())
+            {
+                target.apply2(residual, |pixel, residual| {
+                    let pixel = pixel * 2.0_f32 - 1.0_f32;
+                    let residual = residual * 2.0_f32 - 1.0_f32;
+                    (f32::min(pixel + residual, 1.0_f32) + 1.0_f32) / 2.0_f32
+                });
+                target[3] = original[3];
+            }
+            target
+        };
+        if has_alpha {
+            let mut output = input.into_rgba32f();
+            imageops::replace(&mut output, &applied, 0, 0);
+            output.into()
+        } else {
+            let mut output = input.into_rgb32f();
+            let applied = DynamicImage::ImageRgba32F(applied).into_rgb32f();
+            imageops::replace(&mut output, &applied, 0, 0);
+            output.into()
+        }
+    }
+
+    fn assert_composition_matches_main(input: &DynamicImage, residual: &ArrayD<f32>) {
+        let expected = apply_residual_main_reference(
+            input.clone(),
+            residual_image_main_reference(residual.clone()),
+        );
+        let actual = apply_residual(input.clone(), residual_image(residual.clone()).unwrap());
+        assert_eq!(actual.dimensions(), input.dimensions());
+        assert_eq!(actual.color(), expected.color());
+        assert_eq!(actual.color_space(), input.color_space());
+        assert_eq!(actual.color_space(), expected.color_space());
+        assert_eq!(actual.as_bytes().len(), expected.as_bytes().len());
+        let actual_values = actual.as_bytes().as_chunks::<4>().0;
+        let expected_values = expected.as_bytes().as_chunks::<4>().0;
+        for (index, (actual, expected)) in actual_values.iter().zip(expected_values).enumerate() {
+            assert_eq!(
+                actual,
+                expected,
+                "float {index}, input {:?} {:?}, residual {:?}",
+                input.color(),
+                input.dimensions(),
+                residual.shape()
+            );
+        }
+        if input.color().has_alpha() {
+            let original = input.to_rgba32f();
+            for (actual, original) in actual.as_rgba32f().unwrap().pixels().zip(original.pixels()) {
+                assert_eq!(actual[3].to_bits(), original[3].to_bits());
+            }
+        }
+    }
+
+    fn composition_residual(height: usize, width: usize) -> ArrayD<f32> {
+        Array4::from_shape_fn([1, 3, height, width], |(_, channel, row, column)| {
+            ((channel * 1027 + row * 131 + column * 97) % 401) as f32 / 1000.0 - 0.2
+        })
+        .into_dyn()
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_every_color_type() {
+        for (width, height) in [(48, 35), (32, 32), (32, 40), (16, 10), (20, 50)] {
+            let float =
+                DynamicImage::ImageRgba32F(Rgba32FImage::from_fn(width, height, |column, row| {
+                    image::Rgba([
+                        ((column * 17 + row * 13) % 256) as f32 / 255.0,
+                        ((column * 7 + row * 19) % 256) as f32 / 255.0,
+                        ((column * 23 + row * 3) % 256) as f32 / 255.0,
+                        ((column * 11 + row * 29) % 256) as f32 / 255.0,
+                    ])
+                }));
+            let inputs = [
+                DynamicImage::ImageLuma8(float.to_luma8()),
+                DynamicImage::ImageLumaA8(float.to_luma_alpha8()),
+                DynamicImage::ImageRgb8(float.to_rgb8()),
+                DynamicImage::ImageRgba8(float.to_rgba8()),
+                DynamicImage::ImageLuma16(float.to_luma16()),
+                DynamicImage::ImageLumaA16(float.to_luma_alpha16()),
+                DynamicImage::ImageRgb16(float.to_rgb16()),
+                DynamicImage::ImageRgba16(float.to_rgba16()),
+                DynamicImage::ImageRgb32F(float.to_rgb32f()),
+                float,
+            ];
+            for input in inputs {
+                let default = input.color_space();
+                let color_spaces = [
+                    default,
+                    image::metadata::Cicp {
+                        primaries: CicpColorPrimaries::SmpteRp432,
+                        ..default
+                    },
+                    image::metadata::Cicp {
+                        transfer: CicpTransferCharacteristics::Linear,
+                        ..default
+                    },
+                ];
+                for color_space in color_spaces {
+                    let mut input = input.clone();
+                    input.set_color_space(color_space).unwrap();
+                    for (height, width) in [(32, 32), (32, 48), (48, 32)] {
+                        assert_composition_matches_main(
+                            &input,
+                            &composition_residual(height, width),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_sample_images() {
+        for path in ["../images/ghost.png", "../images/ufo_240.jpg"] {
+            let input = image::open(path).unwrap();
+            for (height, width) in [(256, 256), (256, 384), (384, 256)] {
+                assert_composition_matches_main(&input, &composition_residual(height, width));
+            }
+        }
+    }
+
+    #[test]
+    fn apply_residual_matches_main_on_special_floats() {
+        let values = [
+            -1.0,
+            -0.0,
+            0.0,
+            0.5,
+            1.0,
+            2.0,
+            f32::MIN_POSITIVE,
+            f32::from_bits(1),
+            f32::MIN,
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::from_bits(0xffc01234),
+        ];
+        for (width, height) in [(32, 32), (48, 35), (16, 10)] {
+            let float =
+                DynamicImage::ImageRgba32F(Rgba32FImage::from_fn(width, height, |column, row| {
+                    image::Rgba(std::array::from_fn(|channel| {
+                        values[(column as usize + row as usize * 7 + channel * 3) % values.len()]
+                    }))
+                }));
+            for input in [DynamicImage::ImageRgb32F(float.to_rgb32f()), float] {
+                for (height, width) in [(32, 32), (32, 48), (48, 32)] {
+                    let residual = Array4::from_shape_fn(
+                        [1, 3, height, width],
+                        |(_, channel, row, column)| {
+                            values[(row * 3 + column + channel * 5) % values.len()]
+                        },
+                    )
+                    .into_dyn();
+                    assert_composition_matches_main(&input, &residual);
+                }
+            }
+        }
+    }
 
     #[test]
     fn renormalize_from_0_1() {
