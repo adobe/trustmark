@@ -91,6 +91,29 @@ impl From<bits::Error> for Error {
 pub use bits::Version;
 pub use model::Variant;
 
+/// ONNX Runtime threading for the encoder and decoder sessions.
+///
+/// The default keeps the behaviour of [`Trustmark::new`]: 8 intra-op threads per session and the
+/// runtime's default spinning. A host that runs several models side by side (one per worker
+/// thread, for example) sets `intra_threads` to its own budget and usually turns spinning off,
+/// so idle sessions do not burn CPU.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SessionOptions {
+    /// Intra-op threads of each session (the encoder and the decoder each get this many).
+    pub intra_threads: usize,
+    /// Whether intra-op threads spin while waiting for work; `None` keeps the runtime default.
+    pub intra_op_spinning: Option<bool>,
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        Self {
+            intra_threads: 8,
+            intra_op_spinning: None,
+        }
+    }
+}
+
 impl Trustmark {
     /// Load a Trustmark model.
     pub fn new<P: AsRef<Path>>(
@@ -98,14 +121,27 @@ impl Trustmark {
         variant: Variant,
         version: Version,
     ) -> Result<Self, Error> {
-        let encoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(8)?
-            .commit_from_file(models.as_ref().join(variant.encoder_filename()))?;
-        let decoder = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(8)?
-            .commit_from_file(models.as_ref().join(variant.decoder_filename()))?;
+        Self::with_options(models, variant, version, SessionOptions::default())
+    }
+
+    /// Load a Trustmark model with explicit ONNX Runtime threading.
+    pub fn with_options<P: AsRef<Path>>(
+        models: P,
+        variant: Variant,
+        version: Version,
+        options: SessionOptions,
+    ) -> Result<Self, Error> {
+        let session = |file: String| -> Result<Session, Error> {
+            let mut builder = Session::builder()?
+                .with_optimization_level(GraphOptimizationLevel::Level3)?
+                .with_intra_threads(options.intra_threads)?;
+            if let Some(spinning) = options.intra_op_spinning {
+                builder = builder.with_intra_op_spinning(spinning)?;
+            }
+            Ok(builder.commit_from_file(models.as_ref().join(file))?)
+        };
+        let encoder = session(variant.encoder_filename())?;
+        let decoder = session(variant.decoder_filename())?;
         Ok(Self {
             encoder: Mutex::new(encoder),
             decoder: Mutex::new(decoder),
@@ -199,6 +235,22 @@ mod tests {
     #[test]
     fn loading_models() {
         Trustmark::new("./models", Variant::Q, Version::Bch5).unwrap();
+    }
+
+    #[test]
+    fn roundtrip_with_one_thread_and_no_spinning() {
+        let options = SessionOptions {
+            intra_threads: 1,
+            intra_op_spinning: Some(false),
+        };
+        let tm = Trustmark::with_options("./models", Variant::Q, Version::Bch5, options).unwrap();
+        let input = image::open("../images/ghost.png").unwrap();
+        let watermark = "1011011110011000111111000000011111011111011100000110110110111".to_owned();
+        let encoded = tm.encode(watermark.clone(), input, 0.95).unwrap();
+        let decoded = tm
+            .decode(DynamicImage::ImageRgba8(encoded.to_rgba8()))
+            .unwrap();
+        assert_eq!(watermark, decoded);
     }
 
     fn roundtrip(path: impl AsRef<Path>) {
