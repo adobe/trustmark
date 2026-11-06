@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "trustmark"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "criterion",
  "fast_image_resize",
@@ -2107,6 +2107,7 @@ dependencies = [
  "clap",
  "image",
  "rand 0.8.8",
+ "tempfile",
  "trustmark",
 ]
 

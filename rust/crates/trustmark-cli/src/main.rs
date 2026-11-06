@@ -10,7 +10,7 @@ use std::{fs::OpenOptions, path::PathBuf};
 use clap::{Parser, Subcommand};
 use image::{codecs::jpeg::JpegEncoder, ImageFormat};
 use rand::{distributions::Standard, prelude::Distribution as _};
-use trustmark::{Trustmark, Variant, Version};
+use trustmark::{Trustmark, Variant, Version, WatermarkRemover};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -51,6 +51,19 @@ enum Command {
         #[arg(long)]
         variant: Option<Variant>,
     },
+    /// Remove a supported TrustMark watermark (JPG/PNG only; lossy)
+    Remove {
+        #[arg(short)]
+        input: PathBuf,
+        #[arg(short)]
+        output: PathBuf,
+        /// The model variant used to embed the watermark (default: Q).
+        #[arg(long)]
+        variant: Option<Variant>,
+        /// JPEG output quality (default: 90).
+        #[arg(long, value_parser = clap::value_parser!(u8).range(1..=100))]
+        quality: Option<u8>,
+    },
 }
 
 impl Command {
@@ -73,6 +86,10 @@ impl Command {
                 ..
             } => *variant,
             Command::Decode {
+                variant: Some(variant),
+                ..
+            }
+            | Command::Remove {
                 variant: Some(variant),
                 ..
             } => *variant,
@@ -98,8 +115,23 @@ fn gen_watermark(bits: usize) -> String {
         .collect()
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if let Command::Remove {
+        input,
+        output,
+        quality,
+        ..
+    } = &args.command
+    {
+        return remove_image(
+            &args.models,
+            args.command.get_variant(),
+            input,
+            output,
+            *quality,
+        );
+    }
     let tm = Trustmark::new(
         &args.models,
         args.command.get_variant(),
@@ -151,5 +183,128 @@ fn main() {
                 err => panic!("{err:?}"),
             }
         }
+        Command::Remove { .. } => {
+            unreachable!("removal was dispatched before loading encode/decode models")
+        }
+    }
+    Ok(())
+}
+
+fn remove_image(
+    models: &std::path::Path,
+    variant: Variant,
+    input: &std::path::Path,
+    output: &std::path::Path,
+    quality: Option<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reader = image::ImageReader::open(input)?.with_guessed_format()?;
+    if !matches!(reader.format(), Some(ImageFormat::Jpeg | ImageFormat::Png)) {
+        return Err("watermark removal supports only JPG and PNG input".into());
+    }
+    let format = ImageFormat::from_path(output)?;
+    if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png) {
+        return Err("watermark removal supports only JPG and PNG output".into());
+    }
+    let input = reader.decode()?;
+    // No encoder or decoder is needed for removal.
+    let remover = WatermarkRemover::new(models, variant)?;
+    let recovered = remover.remove(input)?;
+    if format == ImageFormat::Jpeg {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(output)?;
+        recovered
+            .to_rgb8()
+            .write_with_encoder(JpegEncoder::new_with_quality(
+                &mut file,
+                quality.unwrap_or(90),
+            ))?;
+    } else {
+        recovered.to_rgba8().save(output)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removal_cli_selects_variant() {
+        let args = Args::try_parse_from([
+            "trustmark-cli",
+            "-m",
+            "models",
+            "remove",
+            "-i",
+            "in.png",
+            "-o",
+            "out.png",
+            "--variant",
+            "P",
+        ])
+        .unwrap();
+        assert_eq!(args.command.get_variant(), Variant::P);
+        assert!(matches!(args.command, Command::Remove { .. }));
+    }
+
+    #[test]
+    fn removal_rejects_invalid_quality() {
+        assert!(Args::try_parse_from([
+            "trustmark-cli",
+            "-m",
+            "models",
+            "remove",
+            "-i",
+            "in.png",
+            "-o",
+            "out.jpg",
+            "--quality",
+            "101"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn removal_rejects_unsupported_output_before_loading_models() {
+        let error = remove_image(
+            std::path::Path::new("./models/missing"),
+            Variant::Q,
+            std::path::Path::new("../../../images/ghost.png"),
+            std::path::Path::new("out.bmp"),
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "watermark removal supports only JPG and PNG output"
+        );
+    }
+
+    #[test]
+    fn removal_rejects_unsupported_input_before_loading_models() {
+        let directory = tempfile::tempdir().unwrap();
+        // The extension deliberately says PNG: rejection must use the detected
+        // content format, not just the filename.
+        let input = directory.path().join("input.png");
+        image::RgbImage::new(1, 1)
+            .save_with_format(&input, ImageFormat::Bmp)
+            .unwrap();
+        let output = directory.path().join("output.png");
+        let error = remove_image(
+            &directory.path().join("missing-models"),
+            Variant::Q,
+            &input,
+            &output,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "watermark removal supports only JPG and PNG input"
+        );
+        assert!(!output.exists());
     }
 }
