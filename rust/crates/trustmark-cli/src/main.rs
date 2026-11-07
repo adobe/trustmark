@@ -205,30 +205,49 @@ fn remove_image(
     if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png) {
         return Err("watermark removal supports only JPG and PNG output".into());
     }
+    if quality.is_some() && format != ImageFormat::Jpeg {
+        return Err("--quality is supported only for JPEG output".into());
+    }
     let input = reader.decode()?;
     // No encoder or decoder is needed for removal.
     let remover = WatermarkRemover::new(models, variant)?;
     let recovered = remover.remove(input)?;
+    save_removed_image(&recovered, output, format, quality)
+}
+
+fn save_removed_image(
+    recovered: &image::DynamicImage,
+    output: &std::path::Path,
+    format: ImageFormat,
+    quality: Option<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    // Encode beside the destination, then atomically replace it. A failure
+    // leaves the old output intact and removes the temporary file on drop.
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     if format == ImageFormat::Jpeg {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(output)?;
         recovered
             .to_rgb8()
             .write_with_encoder(JpegEncoder::new_with_quality(
-                &mut file,
+                file.as_file_mut(),
                 quality.unwrap_or(90),
             ))?;
     } else {
-        recovered.to_rgba8().save(output)?;
+        image::DynamicImage::ImageRgba8(recovered.to_rgba8())
+            .write_to(file.as_file_mut(), format)?;
     }
+    file.as_file().sync_all()?;
+    file.persist(output)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use image::GenericImageView as _;
+
     use super::*;
 
     #[test]
@@ -306,5 +325,98 @@ mod tests {
             "watermark removal supports only JPG and PNG input"
         );
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn removal_rejects_jpeg_quality_for_png_before_loading_models() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.png");
+        image::RgbImage::new(2, 3).save(&input).unwrap();
+        let output = directory.path().join("output.png");
+        let error = remove_image(
+            &directory.path().join("missing-models"),
+            Variant::Q,
+            &input,
+            &output,
+            Some(95),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "--quality is supported only for JPEG output"
+        );
+        assert!(!output.exists());
+    }
+
+    fn test_image() -> image::DynamicImage {
+        image::RgbImage::from_fn(32, 32, |x, y| {
+            image::Rgb([
+                ((7 * x + 11 * y) % 256) as u8,
+                ((13 * x + 3 * y) % 256) as u8,
+                ((5 * x + 17 * y) % 256) as u8,
+            ])
+        })
+        .into()
+    }
+
+    #[test]
+    fn output_encoding_failure_preserves_existing_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("existing.png");
+        std::fs::write(&output, b"original output").unwrap();
+        // An 8-bit image cannot be encoded as OpenEXR, forcing an encoder error
+        // after the temporary file has been created.
+        assert!(save_removed_image(&test_image(), &output, ImageFormat::OpenExr, None).is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), b"original output");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn jpeg_output_honors_quality_and_default() {
+        let directory = tempfile::tempdir().unwrap();
+        let low = directory.path().join("low.jpg");
+        let high = directory.path().join("high.jpg");
+        let default = directory.path().join("default.jpg");
+        let explicit_default = directory.path().join("explicit-default.jpg");
+        let original = test_image();
+        save_removed_image(&original, &low, ImageFormat::Jpeg, Some(10)).unwrap();
+        save_removed_image(&original, &high, ImageFormat::Jpeg, Some(95)).unwrap();
+        save_removed_image(&original, &default, ImageFormat::Jpeg, None).unwrap();
+        save_removed_image(&original, &explicit_default, ImageFormat::Jpeg, Some(90)).unwrap();
+        assert_eq!(
+            std::fs::read(default).unwrap(),
+            std::fs::read(explicit_default).unwrap()
+        );
+        let original = original.to_rgb8();
+        let error = |path: &std::path::Path| {
+            let decoded = image::open(path).unwrap().to_rgb8();
+            assert_eq!(decoded.dimensions(), original.dimensions());
+            original
+                .as_raw()
+                .iter()
+                .zip(decoded.as_raw())
+                .map(|(&a, &b)| (i64::from(a) - i64::from(b)).pow(2) as u64)
+                .sum::<u64>()
+        };
+        assert!(error(&high) < error(&low));
+        assert!(std::fs::metadata(high).unwrap().len() > std::fs::metadata(low).unwrap().len());
+    }
+
+    #[test]
+    #[ignore = "requires the Q remover model; run cargo xtask fetch-removers"]
+    fn removal_writes_jpeg_end_to_end() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.png");
+        test_image().save(&input).unwrap();
+        let output = directory.path().join("removed.jpg");
+        let models = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models");
+        remove_image(&models, Variant::Q, &input, &output, Some(95)).unwrap();
+        let reader = image::ImageReader::open(&output)
+            .unwrap()
+            .with_guessed_format()
+            .unwrap();
+        assert_eq!(reader.format(), Some(ImageFormat::Jpeg));
+        assert_eq!(reader.decode().unwrap().dimensions(), (32, 32));
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
     }
 }

@@ -6,6 +6,8 @@ on:
     paths:
       - 'rust/**'
       - 'python/trustmark/**'
+      - 'python/export-remover.py'
+      - 'python/test-rust-removal.py'
       - 'python/pyproject.toml'
       - 'python/setup.py'
       - '.github/workflows/rust-ci.yml'
@@ -13,6 +15,8 @@ on:
     paths:
       - 'rust/**'
       - 'python/trustmark/**'
+      - 'python/export-remover.py'
+      - 'python/test-rust-removal.py'
       - 'python/pyproject.toml'
       - 'python/setup.py'
       - '.github/workflows/rust-ci.yml'
@@ -160,7 +164,7 @@ jobs:
         run: python export-remover.py --variant B --variant C
 
       - name: Test removal and re-watermarking
-        run: cargo test --test removal -- --ignored
+        run: cargo test --workspace --all-features -- --ignored
 
       - name: Build removal CLI for parity tests
         run: cargo build -p trustmark-cli

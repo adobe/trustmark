@@ -126,6 +126,9 @@ The CLI writes PNG or JPEG (`--quality 90` by default for JPEG); the library
 accepts decoded `DynamicImage` values. Missing or incompatible remover models
 return errors. A shared remover serializes inference independently of encoders
 and decoders. Existing callers incur no removal-model startup or memory cost.
+The library returns a floating-point RGB/RGBA image; convert it to 8-bit pixels
+before saving PNG/JPEG. The CLI performs this conversion and replaces the output
+only after encoding succeeds. `--quality` is accepted only for JPEG output.
 
 ## Running the benchmarks
 
@@ -165,6 +168,14 @@ Use `--variant Q` to limit the suite to one variant, or `--cache` to reuse
 checkpoints in another directory. Model export parity is checked separately on
 float32 tensors with tighter tolerances.
 
+### Python benchmarks
+
+To run the Python benchmarks, run the following from the workspace root:
+
+```
+benches/load.sh && benches/encode.sh
+```
+
 ## Version 0.5.0 compatibility
 
 Watermark removal adds `Error::RemoverModel` and `Error::InvalidRemoverModel` to
@@ -173,14 +184,6 @@ the crate uses a 0.x minor version bump rather than a patch release. Update
 exhaustive matches to handle the new variants (or use a wildcard arm). Existing
 encode/decode behavior and model loading remain unchanged. These removal APIs
 require version 0.5.0; they are not available in the previously published 0.4.0.
-
-### Python benchmarks
-
-To run the Python benchmarks, run the following from the workspace root:
-
-```
-benches/load.sh && benches/encode.sh
-```
 
 ## Releasing
 

@@ -21,6 +21,4 @@ clap = { version = "4.5.20", features = ["derive"] }
 image = "0.25.6"
 rand = "0.8.5"
 trustmark = { path = "../.." }
-
-[dev-dependencies]
 tempfile = "3"

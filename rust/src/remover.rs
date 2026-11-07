@@ -65,6 +65,10 @@ impl WatermarkRemover {
     /// preserved separately. An image need not contain a detectable watermark: inference still succeeds,
     /// but may change its pixels. Uses Python's default removal strength of 1.0
     /// (1.25 for variant P). Inference on a shared remover is serialized.
+    ///
+    /// Returns an `ImageRgb32F` or `ImageRgba32F`, like [`crate::Trustmark::encode`].
+    /// Convert with [`DynamicImage::to_rgb8`] or [`DynamicImage::to_rgba8`] before
+    /// saving PNG or JPEG, whose encoders do not accept floating-point pixels.
     pub fn remove(&self, img: DynamicImage) -> Result<DynamicImage, Error> {
         if img.width() == 0 || img.height() == 0 {
             return Err(image_processing::Error::Image.into());
