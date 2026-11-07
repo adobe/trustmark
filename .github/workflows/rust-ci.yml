@@ -5,10 +5,20 @@ on:
     branches: [main]
     paths:
       - 'rust/**'
+      - 'python/trustmark/**'
+      - 'python/export-remover.py'
+      - 'python/test-rust-removal.py'
+      - 'python/pyproject.toml'
+      - 'python/setup.py'
       - '.github/workflows/rust-ci.yml'
   pull_request:
     paths:
       - 'rust/**'
+      - 'python/trustmark/**'
+      - 'python/export-remover.py'
+      - 'python/test-rust-removal.py'
+      - 'python/pyproject.toml'
+      - 'python/setup.py'
       - '.github/workflows/rust-ci.yml'
   workflow_dispatch:
 
@@ -107,6 +117,61 @@ jobs:
 
       - name: Check against MSRV
         run: cargo check --workspace --all-targets
+
+  removal:
+    name: Removal model export and integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # CPU-only wheels avoid downloading CUDA dependencies for model export.
+      - name: Install PyTorch CPU
+        run: python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install exporter dependencies
+        run: python -m pip install ../python onnx onnxruntime
+
+      - name: Cache removal models
+        id: cache-removal-models
+        uses: actions/cache@v4
+        with:
+          path: |
+            rust/models
+            python/trustmark/models
+          key: trustmark-removal-models-${{ hashFiles('python/export-remover.py', 'rust/crates/xtask/src/main.rs', 'python/trustmark/**/*.py', 'python/pyproject.toml') }}
+
+      - name: Fetch encoder and decoder models
+        if: steps.cache-removal-models.outputs.cache-hit != 'true'
+        run: cargo xtask fetch-models
+
+      - name: Fetch published P and Q remover models
+        if: steps.cache-removal-models.outputs.cache-hit != 'true'
+        run: cargo xtask fetch-removers
+
+      - name: Export and verify B and C remover variants
+        if: steps.cache-removal-models.outputs.cache-hit != 'true'
+        working-directory: python
+        run: python export-remover.py --variant B --variant C
+
+      - name: Test removal and re-watermarking
+        run: cargo test --workspace --all-features -- --ignored
+
+      - name: Build removal CLI for parity tests
+        run: cargo build -p trustmark-cli
+
+      - name: Compare native and Python crop and feather behavior
+        working-directory: python
+        run: python test-rust-removal.py
 
   package:
     name: Verify publishable package
