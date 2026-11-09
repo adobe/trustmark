@@ -51,24 +51,8 @@ This downloads `remover_P.onnx` and `remover_Q.onnx` from the same CDN as the
 encoder/decoder models. Python is not required to download or use them. Both
 download commands refuse to overwrite existing files.
 
-### Export removal models (optional)
-
-The remover loads a separate `remover_{variant}.onnx` model. To regenerate these
-files from the checksum-verified Python checkpoints, use the Python-owned
-[exporter](../python/export-remover.py). In a Python environment with this
-repository's Python dependencies, also install `onnx` and `onnxruntime`, then
-run from `rust/`:
-
-```sh
-/path/to/venv/bin/python ../python/export-remover.py --variant Q
-```
-
-Omit `--variant` to export B, C, P and Q. This creates `models/remover_Q.onnx`
-(or the selected variants), checks the graph, and verifies ONNX/PyTorch inference
-parity before publishing each file. Existing ONNX files are never overwritten.
-Checkpoints are reused from `python/trustmark/models/`. The Python environment is
-needed only for export and reference tests, not for Rust inference. P and Q can
-use the published downloads above; export B/C locally if those variants are needed.
+Other variants require separately supplied, matching ONNX files named
+`remover_{variant}.onnx`.
 
 ### Run the CLI
 
@@ -140,7 +124,7 @@ To run the Rust benchmarks, run the following from the workspace root:
 cargo bench --bench load --bench encode
 ```
 
-After exporting the remover models, use `cargo bench --bench remove` to measure
+After downloading the remover models, use `cargo bench --bench remove` to measure
 removal separately. Run real-model removal and re-watermarking tests with:
 
 ```sh
@@ -148,9 +132,10 @@ cargo test --test removal -- --ignored
 ```
 
 These tests are opt-in because they require the remover models. P/Q can be
-downloaded with `cargo xtask fetch-removers`; B/C require a local export. The
-normal test suite covers residual interpolation, cropping, alpha preservation,
-output clamping, invalid model layouts and the CLI without those model files.
+downloaded with `cargo xtask fetch-removers`; B/C require separately supplied
+matching ONNX files. The normal test suite covers residual interpolation,
+cropping, alpha preservation, output clamping, invalid model layouts and the CLI
+without those model files.
 Rust CI uses the published P/Q files to test removal, re-watermarking, dimensions,
 alpha and JPEG output. It does not install Python, export models or run
 Python-reference parity checks.
@@ -168,8 +153,7 @@ The Python-owned [parity test](../python/test-rust-removal.py) includes the
 reference loader and output checker. It permits small raster-decoder/resizer
 differences: at most four 8-bit RGB levels per channel and half a level on average.
 Use `--variant Q` to limit the suite to one variant, or `--cache` to reuse
-checkpoints in another directory. Model export parity is checked separately on
-float32 tensors with tighter tolerances.
+checkpoints in another directory.
 
 ### Python benchmarks
 

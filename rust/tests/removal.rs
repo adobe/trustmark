@@ -73,7 +73,7 @@ fn removal_roundtrip(variant: Variant, path: &str) {
 macro_rules! removal_test {
     ($name:ident, $variant:ident) => {
         #[test]
-        #[ignore = "requires remover models; fetch P/Q with xtask or export B/C with Python"]
+        #[ignore = "requires matching remover ONNX models; fetch P/Q with cargo xtask fetch-removers"]
         fn $name() {
             for path in ["../images/ufo_240.jpg", "../images/ghost.png"] {
                 removal_roundtrip(Variant::$variant, path);

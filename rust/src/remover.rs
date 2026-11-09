@@ -43,7 +43,7 @@ impl WatermarkRemover {
     /// Load the remover for the variant used to embed the watermark.
     ///
     /// Download P/Q models with `cargo xtask fetch-removers` from the Rust workspace.
-    /// B/C models can be exported with `python/export-remover.py` in the source repository.
+    /// Other variants require separately supplied, matching `remover_{variant}.onnx` files.
     /// The model must accept and return one float32 NCHW image in `[-1, 1]`.
     pub fn new(models: impl AsRef<Path>, variant: Variant) -> Result<Self, Error> {
         let path = models.as_ref().join(format!("remover_{variant}.onnx"));
