@@ -147,14 +147,17 @@ removal separately. Run real-model removal and re-watermarking tests with:
 cargo test --test removal -- --ignored
 ```
 
-These tests are opt-in because they require the exported remover models. The
+These tests are opt-in because they require the remover models. P/Q can be
+downloaded with `cargo xtask fetch-removers`; B/C require a local export. The
 normal test suite covers residual interpolation, cropping, alpha preservation,
-output clamping, invalid model layouts and the CLI without those exports.
-The dedicated removal CI job downloads P/Q and exports B/C, runs the real-model tests,
-and compares native and Python output on RGB/RGBA images across tiny, odd-sized,
-wide and tall dimensions, including both sides of the square-crop threshold.
+output clamping, invalid model layouts and the CLI without those model files.
+Rust CI uses the published P/Q files to test removal, re-watermarking, dimensions,
+alpha and JPEG output. It does not install Python, export models or run
+Python-reference parity checks.
 
-Run the same parity suite locally after building the CLI:
+The Python-reference parity suite remains available for optional manual checks
+across tiny, odd-sized, wide and tall RGB/RGBA images, including both sides of the
+square-crop threshold. Run it locally after building the CLI:
 
 ```sh
 cargo build -p trustmark-cli
