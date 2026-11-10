@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     encoded.to_rgb8().write_with_encoder(encoder).unwrap();
                 }
                 _ => {
-                    encoded.to_rgba8().save(&output).unwrap();
+                    output_pixels(&encoded).save(&output).unwrap();
                 }
             }
         }
@@ -215,6 +215,15 @@ fn remove_image(
     save_removed_image(&recovered, output, format, quality)
 }
 
+// Preserve the presence of alpha when converting float model output for encoding.
+fn output_pixels(image: &image::DynamicImage) -> image::DynamicImage {
+    if image.color().has_alpha() {
+        image.to_rgba8().into()
+    } else {
+        image.to_rgb8().into()
+    }
+}
+
 fn save_removed_image(
     recovered: &image::DynamicImage,
     output: &std::path::Path,
@@ -225,6 +234,11 @@ fn save_removed_image(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."));
+    let permissions = match std::fs::metadata(output) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
     // Encode beside the destination, then atomically replace it. A failure
     // leaves the old output intact and removes the temporary file on drop.
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
@@ -236,8 +250,18 @@ fn save_removed_image(
                 quality.unwrap_or(90),
             ))?;
     } else {
-        image::DynamicImage::ImageRgba8(recovered.to_rgba8())
-            .write_to(file.as_file_mut(), format)?;
+        output_pixels(recovered).write_to(file.as_file_mut(), format)?;
+    }
+    if let Some(permissions) = permissions {
+        // Preserve ordinary access bits, not setuid/setgid/sticky bits on a new file.
+        #[cfg(unix)]
+        let permissions = {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mut permissions = permissions;
+            permissions.set_mode(permissions.mode() & 0o777);
+            permissions
+        };
+        file.as_file().set_permissions(permissions)?;
     }
     file.as_file().sync_all()?;
     file.persist(output)?;
@@ -360,14 +384,83 @@ mod tests {
     }
 
     #[test]
+    fn png_output_preserves_rgb_and_rgba_channels() {
+        let directory = tempfile::tempdir().unwrap();
+        let rgb = test_image().into_rgb32f();
+        let rgba = image::Rgba32FImage::from_pixel(32, 32, image::Rgba([0.25, 0.5, 0.75, 0.4]));
+        for original in [image::DynamicImage::from(rgb), rgba.into()] {
+            // Exercise the shared encode conversion and the removal writer.
+            let encoded = directory.path().join("encoded.png");
+            output_pixels(&original).save(&encoded).unwrap();
+            let removed = directory.path().join("removed.png");
+            save_removed_image(&original, &removed, ImageFormat::Png, None).unwrap();
+            for path in [encoded, removed] {
+                let decoded = image::open(path).unwrap();
+                assert_eq!(decoded.color().has_alpha(), original.color().has_alpha());
+                assert_eq!(decoded.dimensions(), original.dimensions());
+                assert_eq!(decoded.to_rgba8(), original.to_rgba8());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removal_output_preserves_existing_access_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("existing.png");
+        for mode in [0o600, 0o640, 0o644, 0o444, 0o2640] {
+            std::fs::write(&output, b"old output").unwrap();
+            std::fs::set_permissions(&output, std::fs::Permissions::from_mode(mode)).unwrap();
+            save_removed_image(&test_image(), &output, ImageFormat::Png, None).unwrap();
+            assert_eq!(
+                std::fs::metadata(&output).unwrap().permissions().mode() & 0o7777,
+                mode & 0o777
+            );
+            assert_eq!(
+                image::open(&output).unwrap().to_rgb8(),
+                test_image().to_rgb8()
+            );
+            // Permit the next iteration to replace the fixture contents.
+            std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn new_removal_output_is_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("new.png");
+        save_removed_image(&test_image(), &output, ImageFormat::Png, None).unwrap();
+        let mode = std::fs::metadata(output).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
     fn output_encoding_failure_preserves_existing_file() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("existing.png");
         std::fs::write(&output, b"original output").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o640)).unwrap();
+        }
         // An 8-bit image cannot be encoded as OpenEXR, forcing an encoder error
         // after the temporary file has been created.
         assert!(save_removed_image(&test_image(), &output, ImageFormat::OpenExr, None).is_err());
         assert_eq!(std::fs::read(&output).unwrap(), b"original output");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                std::fs::metadata(&output).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+        }
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 

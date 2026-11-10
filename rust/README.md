@@ -109,10 +109,16 @@ not guarantee the original pixels or erase arbitrary third-party watermarks.
 The CLI writes PNG or JPEG (`--quality 90` by default for JPEG); the library
 accepts decoded `DynamicImage` values. Missing or incompatible remover models
 return errors. A shared remover serializes inference independently of encoders
-and decoders. Existing callers incur no removal-model startup or memory cost.
+and decoders. Encode/decode-only callers that do not construct a `WatermarkRemover`
+incur no additional removal-model startup or memory cost. Constructing a remover
+loads a separate model session; removal also allocates image and inference buffers.
 The library returns a floating-point RGB/RGBA image; convert it to 8-bit pixels
 before saving PNG/JPEG. The CLI performs this conversion and replaces the output
 only after encoding succeeds. `--quality` is accepted only for JPEG output.
+PNG output retains RGB/RGBA channel selection. When replacing an existing removal
+output, the CLI preserves its ordinary file permissions (not ownership or ACLs).
+New removal outputs use private temporary-file permissions (owner read/write on
+Unix); on Unix, replacement does not retain special permission bits.
 
 ## Running the benchmarks
 
