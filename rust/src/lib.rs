@@ -54,6 +54,7 @@ use self::{bits::Bits, image_processing::ModelImage};
 mod bits;
 mod image_processing;
 mod model;
+mod remover;
 
 /// A loaded Trustmark model.
 pub struct Trustmark {
@@ -77,6 +78,16 @@ pub enum Error {
     InvalidModelVariant,
     #[error("ONNX session lock is poisoned")]
     SessionLockPoisoned,
+    #[error("unable to load remover model {path}: {source}")]
+    RemoverModel {
+        path: std::path::PathBuf,
+        #[source]
+        source: ort::Error,
+    },
+    #[error(
+        "invalid remover model: expected one float32 input and output of shape [1, 3, 256, 256]"
+    )]
+    InvalidRemoverModel,
 }
 
 impl From<bits::Error> for Error {
@@ -90,6 +101,7 @@ impl From<bits::Error> for Error {
 
 pub use bits::Version;
 pub use model::Variant;
+pub use remover::WatermarkRemover;
 
 impl Trustmark {
     /// Load a Trustmark model.

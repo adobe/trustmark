@@ -108,6 +108,45 @@ jobs:
       - name: Check against MSRV
         run: cargo check --workspace --all-targets
 
+  removal:
+    name: Removal (published P/Q models)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Cache removal models
+        id: cache-removal-models
+        uses: actions/cache@v4
+        with:
+          path: rust/models
+          key: trustmark-removal-pq-${{ hashFiles('rust/crates/xtask/src/main.rs') }}
+
+      - name: Fetch encoder and decoder models
+        if: steps.cache-removal-models.outputs.cache-hit != 'true'
+        run: cargo xtask fetch-models
+
+      - name: Fetch published P and Q remover models
+        if: steps.cache-removal-models.outputs.cache-hit != 'true'
+        run: cargo xtask fetch-removers
+
+      - name: Test P removal and re-watermarking
+        run: cargo test --test removal removes_and_rewatermarks_p -- --ignored
+
+      - name: Test Q removal and re-watermarking
+        run: cargo test --test removal removes_and_rewatermarks_q -- --ignored
+
+      - name: Test shared remover dimensions and alpha
+        run: cargo test --test removal shared_remover_preserves_dimensions_and_alpha -- --ignored
+
+      - name: Test JPEG removal output
+        run: cargo test -p trustmark-cli removal_writes_jpeg_end_to_end -- --ignored
+
   package:
     name: Verify publishable package
     runs-on: ubuntu-latest

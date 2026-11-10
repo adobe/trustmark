@@ -198,6 +198,76 @@ fn center_crop_size_and_offset(variant: Variant, img: &DynamicImage) -> (u32, u3
     }
 }
 
+/// Apply a removal residual only to the model's crop, feathering its edges as in Python.
+pub(super) fn apply_removal_residual(
+    input: DynamicImage,
+    residual: ArrayD<f32>,
+    variant: Variant,
+) -> DynamicImage {
+    let (w, h, left, top) = center_crop_size_and_offset(variant, &input);
+    let has_alpha = input.color().has_alpha();
+    let mut output = input.to_rgba32f();
+    let feather = ((w.min(h) as f32 * 0.01) as u32).clamp(1, 50);
+
+    for y in 0..h {
+        for x in 0..w {
+            // Python pastes horizontal strips, then vertical strips: vertical feathering
+            // overrides horizontal feathering at corners rather than multiplying it.
+            let vertical = x.min(w - 1 - x);
+            let horizontal = y.min(h - 1 - y);
+            let alpha = if vertical < feather {
+                (vertical + 1) as f32 / feather as f32
+            } else if horizontal < feather {
+                (horizontal + 1) as f32 / feather as f32
+            } else {
+                1.
+            };
+            let target = output.get_pixel_mut(left + x, top + y);
+            for channel in 0..3 {
+                let delta = sample_removal_residual(&residual, channel, x, y, w, h);
+                // Python operates on 8-bit RGB and truncates the final patch, including
+                // feathered pixels. Rounding instead can leave a recoverable payload.
+                let original = (target[channel] as f64 * 255.).round();
+                let recovered = (original + delta as f64 * 127.5).clamp(0., 255.);
+                let blended = alpha as f64 * recovered + (1. - alpha as f64) * original;
+                target[channel] = blended.floor() as f32 / 255.;
+            }
+        }
+    }
+    if has_alpha {
+        output.into()
+    } else {
+        DynamicImage::ImageRgba32F(output).to_rgb32f().into()
+    }
+}
+
+// PyTorch interpolate(mode="bilinear", align_corners=False), without antialiasing
+// or clamping signed residuals during resizing.
+fn sample_removal_residual(
+    residual: &ArrayD<f32>,
+    channel: usize,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> f32 {
+    let source_width = residual.shape()[3];
+    let source_height = residual.shape()[2];
+    let sx = ((x as f32 + 0.5) * source_width as f32 / width as f32 - 0.5)
+        .clamp(0., (source_width - 1) as f32);
+    let sy = ((y as f32 + 0.5) * source_height as f32 / height as f32 - 0.5)
+        .clamp(0., (source_height - 1) as f32);
+    let x0 = sx.floor() as usize;
+    let y0 = sy.floor() as usize;
+    let x1 = (x0 + 1).min(source_width - 1);
+    let y1 = (y0 + 1).min(source_height - 1);
+    let dx = sx - x0 as f32;
+    let dy = sy - y0 as f32;
+    let top = residual[[0, channel, y0, x0]] * (1. - dx) + residual[[0, channel, y0, x1]] * dx;
+    let bottom = residual[[0, channel, y1, x0]] * (1. - dx) + residual[[0, channel, y1, x1]] * dx;
+    top * (1. - dy) + bottom * dy
+}
+
 /// Returns a new `DynamicImage`, resized to `width` by `height` with the specified `ResizeOptions`.
 fn resize_img(
     img: &DynamicImage,
@@ -411,5 +481,68 @@ mod tests {
             residual_image(Array4::zeros([1, 4, 2, 2]).into_dyn()),
             Err(Error::InvalidShape)
         ));
+    }
+
+    #[test]
+    fn removal_preserves_alpha_and_uncropped_pixels() {
+        let input = Rgba32FImage::from_pixel(600, 200, image::Rgba([0.5, 0.5, 0.5, 0.25]));
+        let residual = Array4::from_elem([1, 3, 256, 256], 0.2).into_dyn();
+        let output = apply_removal_residual(input.into(), residual, Variant::P).to_rgba32f();
+        assert_eq!(output.dimensions(), (600, 200));
+        assert_eq!(output.get_pixel(0, 0).0, [0.5, 0.5, 0.5, 0.25]);
+        assert!((output.get_pixel(300, 100)[0] - 0.6).abs() < 1e-6);
+        assert!((output.get_pixel(200, 100)[0] - 140. / 255.).abs() < 1e-6);
+        assert!(output.pixels().all(|p| p[3] == 0.25));
+    }
+
+    #[test]
+    fn removal_clamps_both_ends_and_handles_small_images() {
+        for (value, residual, expected) in [(0.1, -2., 0.), (0.9, 2., 1.)] {
+            let input = Rgb32FImage::from_pixel(1, 1, image::Rgb([value; 3]));
+            let residual = Array4::from_elem([1, 3, 256, 256], residual).into_dyn();
+            let output = apply_removal_residual(input.into(), residual, Variant::Q).to_rgb32f();
+            assert_eq!(output.get_pixel(0, 0).0, [expected; 3]);
+        }
+    }
+
+    #[test]
+    fn removal_bilinear_uses_half_pixel_coordinates() {
+        let residual =
+            Array4::from_shape_fn([1, 3, 2, 2], |(_, _, y, x)| (4 * y + 2 * x) as f32).into_dyn();
+        assert_eq!(sample_removal_residual(&residual, 0, 0, 0, 4, 4), 0.);
+        assert_eq!(sample_removal_residual(&residual, 0, 1, 1, 4, 4), 1.5);
+        assert_eq!(sample_removal_residual(&residual, 0, 2, 2, 4, 4), 4.5);
+        assert_eq!(sample_removal_residual(&residual, 0, 3, 3, 4, 4), 6.);
+        assert_eq!(sample_removal_residual(&residual, 0, 0, 0, 1, 1), 3.);
+    }
+
+    #[test]
+    fn removal_preserves_16_bit_alpha() {
+        let input = ImageBuffer::from_pixel(2, 2, image::Rgba([10000_u16, 20000, 30000, 12345]));
+        let residual = Array4::zeros([1, 3, 256, 256]).into_dyn();
+        let output = apply_removal_residual(DynamicImage::ImageRgba16(input), residual, Variant::Q)
+            .to_rgba16();
+        assert!(output.pixels().all(|p| p[3] == 12345));
+    }
+
+    #[test]
+    fn removal_crop_and_feather_match_python_for_all_variants() {
+        for variant in [Variant::B, Variant::C, Variant::P, Variant::Q] {
+            for (w, h) in [(600, 200), (200, 600), (300, 200)] {
+                let input = Rgb32FImage::from_pixel(w, h, image::Rgb([0.5; 3]));
+                let input = DynamicImage::from(input);
+                let (cw, ch, left, top) = center_crop_size_and_offset(variant, &input);
+                let residual = Array4::from_elem([1, 3, 256, 256], 0.2).into_dyn();
+                let output = apply_removal_residual(input, residual, variant).to_rgb32f();
+                assert_eq!(output.dimensions(), (w, h));
+                assert!((output.get_pixel(left + cw / 2, top + ch / 2)[0] - 0.6).abs() < 1e-6);
+                assert!((output.get_pixel(left + cw / 2, top)[0] - 140. / 255.).abs() < 1e-6);
+                // Vertical feathering overwrites horizontal feathering at corners.
+                assert!((output.get_pixel(left + 1, top)[0] - 0.6).abs() < 1e-6);
+                if left > 0 || top > 0 {
+                    assert_eq!(output.get_pixel(0, 0).0, [0.5; 3]);
+                }
+            }
+        }
     }
 }
