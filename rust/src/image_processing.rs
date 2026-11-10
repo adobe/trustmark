@@ -204,9 +204,23 @@ pub(super) fn apply_removal_residual(
     residual: ArrayD<f32>,
     variant: Variant,
 ) -> DynamicImage {
-    let (w, h, left, top) = center_crop_size_and_offset(variant, &input);
-    let has_alpha = input.color().has_alpha();
-    let mut output = input.to_rgba32f();
+    let crop = center_crop_size_and_offset(variant, &input);
+    if input.color().has_alpha() {
+        let mut output = input.into_rgba32f();
+        add_removal_residual(&mut output, &residual, crop);
+        output.into()
+    } else {
+        let mut output = input.into_rgb32f();
+        add_removal_residual(&mut output, &residual, crop);
+        output.into()
+    }
+}
+
+fn add_removal_residual<P: Pixel<Subpixel = f32>>(
+    output: &mut ImageBuffer<P, Vec<f32>>,
+    residual: &ArrayD<f32>,
+    (w, h, left, top): (u32, u32, u32, u32),
+) {
     let feather = ((w.min(h) as f32 * 0.01) as u32).clamp(1, 50);
 
     for y in 0..h {
@@ -222,22 +236,17 @@ pub(super) fn apply_removal_residual(
             } else {
                 1.
             };
-            let target = output.get_pixel_mut(left + x, top + y);
-            for channel in 0..3 {
-                let delta = sample_removal_residual(&residual, channel, x, y, w, h);
+            let target = output.get_pixel_mut(left + x, top + y).channels_mut();
+            for (channel, value) in target.iter_mut().take(COLOR_CHANNELS).enumerate() {
+                let delta = sample_removal_residual(residual, channel, x, y, w, h);
                 // Python operates on 8-bit RGB and truncates the final patch, including
                 // feathered pixels. Rounding instead can leave a recoverable payload.
-                let original = (target[channel] as f64 * 255.).round();
+                let original = (*value as f64 * 255.).round();
                 let recovered = (original + delta as f64 * 127.5).clamp(0., 255.);
                 let blended = alpha as f64 * recovered + (1. - alpha as f64) * original;
-                target[channel] = blended.floor() as f32 / 255.;
+                *value = blended.floor() as f32 / 255.;
             }
         }
-    }
-    if has_alpha {
-        output.into()
-    } else {
-        DynamicImage::ImageRgba32F(output).to_rgb32f().into()
     }
 }
 
@@ -523,6 +532,42 @@ mod tests {
         let output = apply_removal_residual(DynamicImage::ImageRgba16(input), residual, Variant::Q)
             .to_rgba16();
         assert!(output.pixels().all(|p| p[3] == 12345));
+    }
+
+    #[test]
+    fn removal_reuses_owned_float_buffers_and_preserves_channel_layout() {
+        let inputs = [
+            DynamicImage::ImageRgb32F(Rgb32FImage::from_pixel(3, 2, image::Rgb([0.5; 3]))),
+            DynamicImage::ImageRgba32F(Rgba32FImage::from_pixel(
+                3,
+                2,
+                image::Rgba([0.5, 0.5, 0.5, 0.25]),
+            )),
+        ];
+        for input in inputs {
+            let color = input.color();
+            let pointer = match &input {
+                DynamicImage::ImageRgb32F(image) => image.as_raw().as_ptr(),
+                DynamicImage::ImageRgba32F(image) => image.as_raw().as_ptr(),
+                _ => unreachable!(),
+            };
+            let residual = Array4::zeros([1, 3, 256, 256]).into_dyn();
+            let output = apply_removal_residual(input, residual, Variant::Q);
+            assert_eq!(output.color(), color);
+            let output_pointer = match &output {
+                DynamicImage::ImageRgb32F(image) => image.as_raw().as_ptr(),
+                DynamicImage::ImageRgba32F(image) => image.as_raw().as_ptr(),
+                _ => unreachable!(),
+            };
+            assert_eq!(output_pointer, pointer);
+            if color.has_alpha() {
+                assert!(output
+                    .as_rgba32f()
+                    .unwrap()
+                    .pixels()
+                    .all(|pixel| pixel[3] == 0.25));
+            }
+        }
     }
 
     #[test]

@@ -21,8 +21,9 @@ const MODEL_SIZE: u32 = 256;
 
 /// An explicitly loaded TrustMark watermark remover.
 ///
-/// Loads only `remover_{variant}.onnx`; existing [`crate::Trustmark`] callers incur
-/// no additional startup, memory, or inference cost. Removal is lossy and does not
+/// Loads only `remover_{variant}.onnx`. Callers using only [`crate::Trustmark`] incur
+/// no additional removal cost. Constructing a remover loads a separate model session,
+/// and removal allocates image and inference buffers. Removal is lossy and does not
 /// guarantee restoration of the original pixels or removal of arbitrary watermarks.
 ///
 /// ```no_run
