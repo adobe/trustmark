@@ -6,6 +6,11 @@ crate is versioned independently of the Python package in this repository.
 Entries for releases before 0.3.0 were reconstructed from the commit history,
 since those versions were published manually and without tags.
 
+## Unreleased
+
+- Add `Trustmark::with_options` and `SessionOptions` to set the intra-op thread count and
+  spinning of the ONNX Runtime sessions. `Trustmark::new` keeps its behaviour (8 threads).
+
 ## 0.4.0
 
 - Downgrade `ort` to 2.0.0-rc.10 to restore support for Intel macOS.
