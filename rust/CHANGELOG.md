@@ -6,6 +6,14 @@ crate is versioned independently of the Python package in this repository.
 Entries for releases before 0.3.0 were reconstructed from the commit history,
 since those versions were published manually and without tags.
 
+## 0.5.0
+
+- Add watermark removal through `WatermarkRemover` and the CLI, with support
+  for downloading the published P and Q remover models.
+- **Breaking:** Add `Error::RemoverModel` and `Error::InvalidRemoverModel`;
+  callers with exhaustive `Error` matches must handle the new variants.
+- Rework image processing and watermark bit handling.
+
 ## 0.4.0
 
 - Downgrade `ort` to 2.0.0-rc.10 to restore support for Intel macOS.
