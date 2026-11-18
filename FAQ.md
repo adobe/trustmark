@@ -43,7 +43,7 @@ However, C2PA metadata can be accidentally removed when the image is shared thro
 
 ### Does TrustMark alter metadata or EXIF information?
 
-No, TrustMark only modifies pixel data and does not interact with image metadata. The software libraries (e.g., [PIL](https://pypi.org/project/pillow/) in Python) should be used to persist metadata between the input and output image (as shown in the [Python code example](https://github.com/adobe/trustmark/blob/main/python/test.py)).
+No, TrustMark only modifies pixel data and does not interact with image metadata. The software libraries (e.g., [PIL](https://pypi.org/project/pillow/) in Python) should be used to persist metadata between the input and output image (as shown in the [Python code example](https://github.com/adobe/trustmark/blob/main/python/test-decode.py)).
 
 ## Technical Details
 
